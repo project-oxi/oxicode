@@ -325,7 +325,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8b8fd1e175c5ee3108095da452e816519de618beccea23aa053c00cf5e344b9"
 dependencies = [
  "futures",
- "lsp-types",
+ "lsp-types 0.95.1",
  "pin-project-lite",
  "rustix 1.1.4",
  "serde",
@@ -502,6 +502,12 @@ name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
+name = "base64"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b25655df2c3cdd83c5e5b293b88acd880332b2ddadd7c30ac43144fdc0033da9"
 
 [[package]]
 name = "base64ct"
@@ -1314,7 +1320,6 @@ dependencies = [
  "encode_unicode",
  "libc",
  "once_cell",
- "unicode-width",
  "windows-sys 0.59.0",
 ]
 
@@ -1682,7 +1687,7 @@ dependencies = [
  "mio",
  "parking_lot",
  "rustix 1.1.4",
- "signal-hook",
+ "signal-hook 0.3.18",
  "signal-hook-mio",
  "winapi",
 ]
@@ -2493,6 +2498,15 @@ dependencies = [
 
 [[package]]
 name = "fluent-uri"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17c704e9dbe1ddd863da1e6ff3567795087b1eb201ce80d8fa81162e1516500d"
+dependencies = [
+ "bitflags 1.3.2",
+]
+
+[[package]]
+name = "fluent-uri"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc74ac4d8359ae70623506d512209619e5cf8f347124910440dbc221714b328e"
@@ -2919,6 +2933,8 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -2956,7 +2972,7 @@ checksum = "aef3982638978efa195ff11b305f51f1f22f4f0a6cabee7af79b383ebee6a213"
 dependencies = [
  "dirs",
  "http",
- "indicatif 0.18.6",
+ "indicatif",
  "libc",
  "log",
  "native-tls",
@@ -3466,7 +3482,7 @@ dependencies = [
  "image-webp",
  "moxcms",
  "num-traits",
- "png 0.18.1",
+ "png",
  "qoi",
  "ravif",
  "rayon",
@@ -3508,19 +3524,6 @@ dependencies = [
  "hashbrown 0.17.1",
  "serde",
  "serde_core",
-]
-
-[[package]]
-name = "indicatif"
-version = "0.17.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "183b3088984b400f4cfac3620d5e076c84da5364016b4f49473de574b2586235"
-dependencies = [
- "console 0.15.11",
- "number_prefix",
- "portable-atomic",
- "unicode-width",
- "web-time",
 ]
 
 [[package]]
@@ -3682,9 +3685,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.46.10"
+version = "0.49.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0a699d3e77675e6aa4bfffe3b907c8b5f7ed3241f9965bffb25475ad4b08d05"
+checksum = "257549c093d8f3d043337ba0d507e8eeace2447dfae3f0ee37eb0f57d3df7655"
 dependencies = [
  "ahash",
  "bytecount",
@@ -3696,6 +3699,7 @@ dependencies = [
  "idna",
  "itoa",
  "jsonschema-regex",
+ "jsonschema-value",
  "num-cmp",
  "num-traits",
  "percent-encoding",
@@ -3703,17 +3707,32 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "strum",
  "unicode-general-category",
  "uuid-simd",
 ]
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.46.10"
+version = "0.49.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dbd1086b01b9349fd4ef9a07433965af64c8ce8159abe633a189e4ff817bd13"
+checksum = "ac634e339e73bf9629f6fb207f7b064d872253ae3b3f5c6e0ce8fd762b16e40f"
 dependencies = [
  "regex-syntax",
+]
+
+[[package]]
+name = "jsonschema-value"
+version = "0.49.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92b8e258eb4515a3fc912a9c46e3987040dc07280592280097ea2085527870b8"
+dependencies = [
+ "ahash",
+ "bytecount",
+ "fraction",
+ "num-cmp",
+ "num-traits",
+ "serde_json",
 ]
 
 [[package]]
@@ -3943,6 +3962,19 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "url",
+]
+
+[[package]]
+name = "lsp-types"
+version = "0.97.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53353550a17c04ac46c585feb189c2db82154fc84b79c7a66c96c2c644f66071"
+dependencies = [
+ "bitflags 1.3.2",
+ "fluent-uri 0.1.4",
+ "serde",
+ "serde_json",
+ "serde_repr",
 ]
 
 [[package]]
@@ -4542,12 +4574,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "number_prefix"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
-
-[[package]]
 name = "objc2"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4778,9 +4804,9 @@ checksum = "d211803b9b6b570f68772237e415a029d5a50c65d382910b879fb19d3271f94d"
 
 [[package]]
 name = "oxibrowser"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "028ca1c8324cdf06f77604f87d8d0789252881ab611226d2e0adb09ac2eabfe4"
+checksum = "e7f2e1e0b8abbfc1b709eab1d6e12f4f393f18abd9fbb8a256402ef1cdcff9e2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4788,7 +4814,7 @@ dependencies = [
  "clap",
  "futures",
  "oxibrowser-cdp",
- "oxibrowser-core 0.16.0",
+ "oxibrowser-core",
  "reqwest",
  "serde",
  "serde_json",
@@ -4800,9 +4826,9 @@ dependencies = [
 
 [[package]]
 name = "oxibrowser-cdp"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3c3b6bf9b319934985968700a1e99d344437f89805f5336d8f5965b1ba586ab"
+checksum = "85d90b401fd20c5fd09ca204a6895b179e63b123862ff56250a8d6df8a59ee0d"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4810,54 +4836,17 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "oxibrowser-core 0.16.0",
- "oxibrowser-webapi 0.16.0",
+ "oxibrowser-core",
+ "oxibrowser-webapi",
  "serde",
  "serde_json",
  "sha1 0.10.7",
  "thiserror 2.0.19",
  "tokio",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.26.2",
  "tracing",
  "url",
  "uuid",
-]
-
-[[package]]
-name = "oxibrowser-core"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fe7ec80335a86637d800e282a1146fd1ccf1f3c20ca100eff9ca30eb1581136"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "boa_engine",
- "boa_gc",
- "bytes",
- "chrono",
- "encoding_rs",
- "futures",
- "getrandom 0.3.4",
- "html5ever",
- "image",
- "markup5ever",
- "oxibrowser-webapi 0.16.0",
- "parking_lot",
- "percent-encoding",
- "pollster",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "string_cache",
- "thiserror 2.0.19",
- "tokio",
- "tracing",
- "url",
- "uuid",
- "wreq",
- "wreq-util",
 ]
 
 [[package]]
@@ -4879,7 +4868,7 @@ dependencies = [
  "html5ever",
  "image",
  "markup5ever",
- "oxibrowser-webapi 0.17.0",
+ "oxibrowser-webapi",
  "parking_lot",
  "percent-encoding",
  "pollster",
@@ -4895,21 +4884,6 @@ dependencies = [
  "uuid",
  "wreq",
  "wreq-util",
-]
-
-[[package]]
-name = "oxibrowser-webapi"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19741b02796602376dbd6036140e0ff8cee3c846a751191d4f7939c6c96952a7"
-dependencies = [
- "html5ever",
- "markup5ever",
- "serde",
- "serde_json",
- "string_cache",
- "thiserror 2.0.19",
- "tracing",
 ]
 
 [[package]]
@@ -4934,13 +4908,13 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.0",
  "dirs",
  "futures",
  "glob",
  "libc",
  "oxibrowser",
- "oxibrowser-core 0.16.0",
+ "oxibrowser-core",
  "oxicode-ai",
  "oxicode-api-stability",
  "oxicode-hashline",
@@ -4963,7 +4937,7 @@ name = "oxicode-ai"
 version = "0.68.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.0",
  "bytes",
  "chrono",
  "criterion",
@@ -4984,7 +4958,7 @@ dependencies = [
  "prost-build",
  "protoc-bin-vendored",
  "raii_flock",
- "rand 0.9.5",
+ "rand 0.10.2",
  "reqwest",
  "rsa",
  "serde",
@@ -4995,8 +4969,8 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tokio-stream",
- "tokio-tungstenite",
- "toml 0.9.12+spec-1.1.0",
+ "tokio-tungstenite 0.30.0",
+ "toml 1.1.4+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -5009,7 +4983,7 @@ version = "0.68.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -5026,7 +5000,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.19",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
+ "toml 1.1.4+spec-1.1.0",
  "tracing",
 ]
 
@@ -5038,7 +5012,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.0",
  "chrono",
  "clap",
  "clap_complete",
@@ -5051,7 +5025,7 @@ dependencies = [
  "image",
  "libc",
  "libloading 0.9.0",
- "lsp-types",
+ "lsp-types 0.97.0",
  "notify",
  "nucleo",
  "oxicode-agent",
@@ -5064,7 +5038,7 @@ dependencies = [
  "parking_lot",
  "portable-pty",
  "predicates",
- "rand 0.9.5",
+ "rand 0.10.2",
  "ratatui",
  "regex",
  "reqwest",
@@ -5079,7 +5053,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.19",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
+ "toml 1.1.4+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "unicode-width",
@@ -5113,7 +5087,7 @@ dependencies = [
  "async-process",
  "dashmap",
  "futures",
- "lsp-types",
+ "lsp-types 0.97.0",
  "parking_lot",
  "serde",
  "serde_json",
@@ -5162,7 +5136,7 @@ dependencies = [
  "futures",
  "glob",
  "globset",
- "oxibrowser-core 0.17.0",
+ "oxibrowser-core",
  "oxicode-agent",
  "oxicode-ai",
  "oxicode-api-stability",
@@ -5178,7 +5152,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tokio-util",
- "toml 0.9.12+spec-1.1.0",
+ "toml 1.1.4+spec-1.1.0",
  "tracing",
  "uuid",
  "walkdir",
@@ -5190,7 +5164,7 @@ name = "oxicode-snapcompact"
 version = "0.68.0"
 dependencies = [
  "fontdue",
- "png 0.17.16",
+ "png",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
@@ -5204,14 +5178,14 @@ dependencies = [
  "anstyle",
  "anyhow",
  "arboard",
- "base64 0.22.1",
+ "base64 0.23.0",
  "better-panic",
  "catppuccin",
  "chrono",
  "color-eyre",
  "crossterm",
  "futures",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "human-panic",
  "humantime",
  "image",
@@ -5226,13 +5200,13 @@ dependencies = [
  "ratatui-textarea",
  "regex",
  "serde",
- "signal-hook",
+ "signal-hook 0.4.4",
  "syntect",
  "terminal_size",
  "thiserror 2.0.19",
  "tokio",
  "tokio-util",
- "toml 0.8.23",
+ "toml 1.1.4+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
  "tui-shimmer",
@@ -5248,7 +5222,7 @@ dependencies = [
  "anstyle",
  "anyhow",
  "chrono",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
  "regex",
  "serde",
  "serde_json",
@@ -5571,19 +5545,6 @@ dependencies = [
 
 [[package]]
 name = "png"
-version = "0.17.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
-dependencies = [
- "bitflags 1.3.2",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide",
-]
-
-[[package]]
-name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
@@ -5745,7 +5706,7 @@ version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
- "toml_edit 0.25.13+spec-1.1.0",
+ "toml_edit",
 ]
 
 [[package]]
@@ -6014,9 +5975,9 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 
 [[package]]
 name = "quick-xml"
-version = "0.23.1"
+version = "0.38.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11bafc859c6815fbaffbbbf4229ecb767ac913fecb27f9ad4343662e9ef099ea"
+checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
 dependencies = [
  "memchr",
 ]
@@ -6489,14 +6450,14 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.46.10"
+version = "0.49.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fbf332a2f81899f6836f22c03da73dae8a664c32e3016b84692c23cddadc95d"
+checksum = "42902112f88a27e9afd5683e2ba31956fed2a5d43395f166dd26775ae9c0dedb"
 dependencies = [
  "ahash",
- "fluent-uri",
+ "fluent-uri 0.4.1",
  "getrandom 0.3.4",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
  "itoa",
  "micromap",
  "parking_lot",
@@ -6885,23 +6846,25 @@ dependencies = [
 
 [[package]]
 name = "self_update"
-version = "0.41.0"
+version = "0.43.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "469a3970061380c19852269f393e74c0fe607a4e23d85267382cf25486aa8de5"
+checksum = "6644febaa58f323b28f7321d04e24d0020d117c27619ab869d6abdf76be9aac6"
 dependencies = [
  "either",
  "flate2",
- "hyper",
- "indicatif 0.17.11",
+ "http",
+ "indicatif",
  "log",
- "quick-xml 0.23.1",
+ "quick-xml 0.38.4",
  "regex",
  "reqwest",
  "self-replace",
  "semver",
+ "serde",
  "serde_json",
  "tar",
  "tempfile",
+ "ureq",
  "urlencoding",
  "zipsign-api",
 ]
@@ -6981,15 +6944,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.3",
-]
-
-[[package]]
-name = "serde_spanned"
-version = "0.6.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -7129,6 +7083,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2a0c28ca5908dbdbcd52e6fdaa00358ab88637f8ab33e1f188dd510eb44b53d"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
 name = "signal-hook-mio"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7136,7 +7100,7 @@ checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
 dependencies = [
  "libc",
  "mio",
- "signal-hook",
+ "signal-hook 0.3.18",
 ]
 
 [[package]]
@@ -7537,7 +7501,7 @@ dependencies = [
  "bitflags 2.13.1",
  "parking_lot",
  "rustix 1.1.4",
- "signal-hook",
+ "signal-hook 0.3.18",
  "windows-sys 0.61.2",
 ]
 
@@ -7604,7 +7568,7 @@ dependencies = [
  "pest_derive",
  "phf",
  "sha2 0.10.9",
- "signal-hook",
+ "signal-hook 0.3.18",
  "siphasher",
  "terminfo",
  "termios",
@@ -7877,11 +7841,23 @@ checksum = "7a9daff607c6d2bf6c16fd681ccb7eecc83e4e2cdc1ca067ffaadfca5de7f084"
 dependencies = [
  "futures-util",
  "log",
+ "tokio",
+ "tungstenite 0.26.2",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
+dependencies = [
+ "futures-util",
+ "log",
  "rustls",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
- "tungstenite",
+ "tungstenite 0.30.0",
  "webpki-roots 0.26.11",
 ]
 
@@ -7901,25 +7877,13 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.8.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
-dependencies = [
- "serde",
- "serde_spanned 0.6.9",
- "toml_datetime 0.6.11",
- "toml_edit 0.22.27",
-]
-
-[[package]]
-name = "toml"
 version = "0.9.12+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
 dependencies = [
  "indexmap",
  "serde_core",
- "serde_spanned 1.1.1",
+ "serde_spanned",
  "toml_datetime 0.7.5+spec-1.1.0",
  "toml_parser",
  "toml_writer",
@@ -7932,19 +7896,13 @@ version = "1.1.4+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3aace63f4bbcdfc2c965b059de67119c89c4017a70d633be6c104910f67056f5"
 dependencies = [
+ "indexmap",
  "serde_core",
- "serde_spanned 1.1.1",
+ "serde_spanned",
  "toml_datetime 1.1.1+spec-1.1.0",
+ "toml_parser",
  "toml_writer",
-]
-
-[[package]]
-name = "toml_datetime"
-version = "0.6.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
-dependencies = [
- "serde",
+ "winnow 1.0.4",
 ]
 
 [[package]]
@@ -7967,20 +7925,6 @@ dependencies = [
 
 [[package]]
 name = "toml_edit"
-version = "0.22.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
-dependencies = [
- "indexmap",
- "serde",
- "serde_spanned 0.6.9",
- "toml_datetime 0.6.11",
- "toml_write",
- "winnow 0.7.15",
-]
-
-[[package]]
-name = "toml_edit"
 version = "0.25.13+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b"
@@ -7999,12 +7943,6 @@ checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow 1.0.4",
 ]
-
-[[package]]
-name = "toml_write"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "toml_writer"
@@ -8175,11 +8113,27 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.5",
- "rustls",
- "rustls-pki-types",
  "sha1 0.10.7",
  "thiserror 2.0.19",
  "utf-8",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.10.2",
+ "rustls",
+ "rustls-pki-types",
+ "sha1 0.11.0",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -8324,6 +8278,7 @@ dependencies = [
  "base64 0.22.1",
  "cookie_store",
  "der 0.8.1",
+ "encoding_rs",
  "flate2",
  "log",
  "native-tls",
@@ -9459,9 +9414,6 @@ name = "winnow"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
-dependencies = [
- "memchr",
-]
 
 [[package]]
 name = "winnow"
