@@ -180,6 +180,14 @@ pub struct RenderState {
     pub overlay: Option<OverlayState>,
     /// Model IDs for the /model overlay picker (ordered same as overlay items).
     pub overlay_model_ids: Vec<String>,
+    /// `(provider, model_id)` pairs backing the `/models` catalog browser
+    /// overlay (ordered same as overlay items).
+    pub overlay_catalog_models: Vec<(String, String)>,
+    /// Provider names backing the `/providers` overlay (ordered same as items).
+    pub overlay_providers: Vec<String>,
+    /// Model catalog port handle, captured once at TUI startup so slash
+    /// commands (`/models`, `/providers`) can browse the full catalog.
+    pub catalog: Option<std::sync::Arc<dyn oxicode_sdk::ports::catalog::ModelCatalog>>,
     /// Queued input prompts (waiting to be processed).
     pub queued_inputs: Vec<String>,
     /// Queued input prompts — interactive panel open (Ctrl+; toggles).
@@ -333,6 +341,8 @@ pub enum ConfirmationAction {
     Quit,
     /// Clear the conversation transcript + reset the agent session.
     ClearConversation,
+    /// Remove the stored API key for a provider (`/providers` → confirm).
+    RemoveProviderKey(String),
 }
 
 /// A short-lived contextual tip banner (grok-build ephemeral tips parity).
@@ -669,6 +679,7 @@ pub async fn run_tui(app: App) -> Result<()> {
         header,
     )));
     state.lock().cwd = cwd.clone();
+    state.lock().catalog = Some(app.catalog());
     // Onboarding tip: surfaces the cheatsheet and help command on first run,
     // auto-dismisses after ~30s of rendering.
     state.lock().tip = Some(EphemeralTip {
@@ -1384,6 +1395,57 @@ fn handle_inline_event(
                         state.input_buffer = format!("/resume {id}");
                         state.input_cursor = state.input_buffer.len();
                     }
+                    // `/models` catalog browser: switch to the selected model.
+                    if let OverlaySubmission::Selection(InlineListSelection::CatalogModel(idx)) =
+                        &sub
+                        && idx < &state.overlay_catalog_models.len()
+                    {
+                        let (provider, model_id) = &state.overlay_catalog_models[*idx];
+                        let full = format!("{provider}/{model_id}");
+                        match session.set_model(&full) {
+                            Ok(()) => handle.append_line(
+                                InlineMessageKind::Info,
+                                vec![plain_segment(format!("Switched to {full}"))],
+                            ),
+                            Err(e) => handle.append_line(
+                                InlineMessageKind::Error,
+                                vec![plain_segment(format!("Failed to set model: {e}"))],
+                            ),
+                        }
+                    }
+                    // `/providers` list: offer key removal (has key) or show
+                    // how to add one (no key).
+                    if let OverlaySubmission::Selection(InlineListSelection::ProviderRow(idx)) =
+                        &sub
+                        && idx < &state.overlay_providers.len()
+                    {
+                        let name = state.overlay_providers[*idx].clone();
+                        let auth = crate::store::auth_storage::shared_auth_storage();
+                        if auth.has(&name) {
+                            state.confirmation = Some(ModalConfirmation {
+                                title: format!("Remove key for {name}?"),
+                                message: "  y \u{2014} remove key     n / x \u{2014} cancel".into(),
+                                action: ConfirmationAction::RemoveProviderKey(name),
+                            });
+                        } else {
+                            let env_hint = state
+                                .catalog
+                                .as_ref()
+                                .and_then(|c| c.get_provider_sync(&name))
+                                .and_then(|p| p.env_key);
+                            let msg = match env_hint {
+                                Some(env) => format!(
+                                    "No key for '{name}'. Set {env} or run `oxicode setup`."
+                                ),
+                                None => {
+                                    format!("No key for '{name}'. Run `oxicode setup` to add one.")
+                                }
+                            };
+                            handle.append_line(InlineMessageKind::Info, vec![plain_segment(msg)]);
+                        }
+                    }
+                    state.overlay_catalog_models.clear();
+                    state.overlay_providers.clear();
                     state.overlay_model_ids.clear();
                     handle.close_overlay();
                 }
@@ -2011,6 +2073,14 @@ fn handle_confirmation_key(
                     // accessible). The sentinel arg bypasses the dialog.
                     let _ = evt_tx.send(InlineEvent::Submit("/clear --yes".into()));
                 }
+                ConfirmationAction::RemoveProviderKey(name) => {
+                    // Re-dispatch /providers remove <name> --yes so it flows
+                    // through the normal command pipeline. The sentinel arg
+                    // bypasses the confirm dialog.
+                    let _ = evt_tx.send(InlineEvent::Submit(
+                        format!("/providers remove {name} --yes").into(),
+                    ));
+                }
             }
         }
         KeyCode::Char('n')
@@ -2033,7 +2103,7 @@ fn handle_overlay_key(
     evt_tx: &tokio::sync::mpsc::UnboundedSender<InlineEvent>,
     code: KeyCode,
 ) -> bool {
-    use oxicode_vtui::tui::core::{InlineListSelection, OverlayEvent, OverlaySubmission};
+    use oxicode_vtui::tui::core::{OverlayEvent, OverlaySubmission};
 
     let mut s = state.lock();
     let Some(overlay) = s.overlay.as_mut() else {
@@ -2051,13 +2121,17 @@ fn handle_overlay_key(
             // Submit the currently selected item. If no item is selected
             // (empty list), we still close the overlay with a cancel.
             let submission = if let Some(item) = overlay.items.get(overlay.selected) {
-                item.selection.clone().unwrap_or_else(|| {
-                    // Fallback: echo back the index as a generic selection.
-                    // The harness can map the index back to a semantic
-                    // choice; this avoids dropping the event when an item
-                    // carries no InlineListSelection (e.g. Wizard).
-                    InlineListSelection::SlashCommand(format!("overlay:{}", overlay.selected))
-                })
+                match item.selection.clone() {
+                    Some(sel) => sel,
+                    None => {
+                        // Read-only / informational item (no InlineListSelection,
+                        // e.g. /tools, /mcp, the /settings Model row): Enter is
+                        // a no-op — keep the overlay open so the user can keep
+                        // browsing (Esc closes). Avoids polluting the prompt
+                        // with a synthetic "/overlay:N" command.
+                        return true;
+                    }
+                }
             } else {
                 drop(s);
                 state.lock().overlay = None;
@@ -4398,6 +4472,41 @@ mod render_tests {
         assert!(
             matches!(evt, InlineEvent::Overlay(OverlayEvent::Cancelled)),
             "expected Cancelled overlay event"
+        );
+    }
+
+    #[test]
+    fn overlay_enter_on_readonly_item_is_noop() {
+        // A read-only item (selection: None — /tools, /mcp, the /settings
+        // Model row) must NOT submit a synthetic selection or pollute the
+        // prompt with "/overlay:N". Enter is a no-op: overlay stays open.
+        let mut state = RenderState::default();
+        state.overlay = Some(OverlayState {
+            title: "Tools".to_string(),
+            lines: Vec::new(),
+            items: vec![OverlayListItem {
+                title: "read".to_string(),
+                subtitle: Some("Read a file".to_string()),
+                badge: None,
+                indent: 0,
+                search_value: None,
+                selection: None,
+            }],
+            selected: 0,
+            search: None,
+        });
+        let state_arc = Arc::new(parking_lot::Mutex::new(state));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let consumed = handle_overlay_key(&state_arc, &tx, KeyCode::Enter);
+        assert!(consumed, "Enter must be consumed even on read-only items");
+        assert!(
+            state_arc.lock().overlay.is_some(),
+            "overlay must stay open when Enter hits a read-only item"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "no overlay event must be emitted for a read-only Enter"
         );
     }
 

@@ -32,6 +32,11 @@ pub enum InlineListSelection {
     DisableReasoning,
     OpenAIServiceTier(OpenAIServiceTierChoice),
     CustomModel,
+    /// `/models` catalog browser — index into
+    /// `RenderState::overlay_catalog_models`.
+    CatalogModel(usize),
+    /// `/providers` list — index into `RenderState::overlay_providers`.
+    ProviderRow(usize),
     Theme(String),
     Session(String),
     SessionForkMode {

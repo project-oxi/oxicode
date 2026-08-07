@@ -365,6 +365,7 @@ fn register_all(registry: &mut SlashRegistry) {
     registry.register(Box::new(FindCommand));
     registry.register(Box::new(SessionsCommand));
     registry.register(Box::new(ShortcutsCommand));
+    super::commands::register_extra(registry);
 }
 
 /// `/vim` — toggle vim mode for prompt editing.
@@ -526,9 +527,22 @@ impl SlashCommand for ModelCommand {
                         .enumerate()
                         .map(|(i, m)| {
                             let id = format!("{}/{}", m.provider, m.model_id);
+                            let sub = ctx
+                                .state
+                                .catalog
+                                .as_ref()
+                                .and_then(|c| c.get_model_sync(&m.provider, &m.model_id))
+                                .map(|e| {
+                                    format!(
+                                        "{} · {}",
+                                        m.provider,
+                                        super::commands::fmt_ctx(e.context_window)
+                                    )
+                                })
+                                .unwrap_or_else(|| m.provider.clone());
                             InlineListItem {
                                 title: id.clone(),
-                                subtitle: Some(m.provider.clone()),
+                                subtitle: Some(sub),
                                 badge: if id == current {
                                     Some("active".to_string())
                                 } else {
@@ -603,10 +617,33 @@ impl SlashCommand for StatusCommand {
     fn execute(&self, _args: &str, ctx: &mut SlashCtx<'_>) -> SlashOutcome {
         let stats = ctx.session.session_stats();
         let model = ctx.session.model_id();
+        let (provider, model_part) = super::commands::split_model_id(&model);
+        let auth = crate::store::auth_storage::shared_auth_storage();
+        let key = if auth.has(provider) { "set" } else { "missing" };
+        let ctx_win = ctx
+            .state
+            .catalog
+            .as_ref()
+            .and_then(|c| c.get_model_sync(provider, model_part))
+            .map(|e| super::commands::fmt_ctx(e.context_window))
+            .unwrap_or_else(|| "?".to_string());
+        let compaction = if ctx.session.auto_compaction_enabled() {
+            "on"
+        } else {
+            "off"
+        };
+        let advisor = if ctx.session.is_advisor_enabled() {
+            "on"
+        } else {
+            "off"
+        };
+        let thinking = ctx.session.thinking_level();
         ctx.reply(
             InlineMessageKind::Info,
             format!(
-                "Model: {model}\n\
+                "Model: {model}  (key: {key}, {ctx_win})\n\
+                 Provider: {provider}  \u{00b7}  Thinking: {thinking:?}\n\
+                 Compaction: {compaction}  \u{00b7}  Advisor: {advisor}\n\
                  Messages: {} user / {} assistant\n\
                  Tool calls: {} (results: {})\n\
                  Total: {}",
@@ -805,6 +842,12 @@ fn shortcuts_lines() -> Vec<String> {
         "  ?          Show this cheatsheet".into(),
         "  /theme     Cycle color theme".into(),
         "  /model     Pick a model".into(),
+        "  /models    Browse all models".into(),
+        "  /providers Manage API keys".into(),
+        "  /tools     List tools".into(),
+        "  /mcp       MCP status".into(),
+        "  /info      Diagnostics".into(),
+        "  /export    Save as HTML".into(),
         "  /vim       Toggle vim mode".into(),
         "  Ctrl+C     Cancel run (then y to quit)".into(),
         "".into(),

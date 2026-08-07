@@ -489,6 +489,12 @@ impl App {
         &self.oxicode
     }
 
+    /// Get a clone of the model catalog port (the canonical provider/model
+    /// metadata source). Used by the TUI to browse the full catalog in-TUI.
+    pub fn catalog(&self) -> std::sync::Arc<dyn oxicode_sdk::ports::catalog::ModelCatalog> {
+        std::sync::Arc::clone(self.oxicode.catalog())
+    }
+
     /// Get a reference to the underlying agent.
     pub fn agent(&self) -> Arc<Agent> {
         Arc::clone(&self.agent)
