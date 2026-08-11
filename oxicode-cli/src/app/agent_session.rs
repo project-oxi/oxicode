@@ -99,6 +99,15 @@ pub enum SessionEvent {
         /// The rendered `<advisory>` batch (one element per note).
         body: String,
     },
+    /// Session handoff complete — a new session was started from a handoff
+    /// document. The event loop uses this to clear the transcript and
+    /// optionally auto-submit a continuation prompt.
+    HandoffComplete {
+        /// Path to the written handoff document.
+        doc_path: String,
+        /// Whether to auto-submit a continuation prompt to the new session.
+        auto_continue: bool,
+    },
 }
 
 /// Result of a compaction operation.
@@ -1189,6 +1198,31 @@ impl AgentSession {
     /// Called before session switch or quit.
     pub fn cleanup_empty_session(&self) {
         self.session_manager.read().cleanup_if_empty();
+    }
+
+    /// Start a new session: create a fresh [`SessionManager`] (new file, new
+    /// session ID), and reset the agent state. Used by `/handoff`.
+    ///
+    /// The old session's JSONL file is preserved (append-only). The new
+    /// session gets a blank conversation — the caller is responsible for
+    /// seeding it (e.g. emitting a continuation prompt).
+    pub fn start_new_session(&self) {
+        let cwd = self.cwd.clone();
+        let new_manager = SessionManager::create(&cwd, None);
+        *self.session_manager.write() = new_manager;
+        *self.session_id.write() = self.session_manager.read().get_session_id();
+        self.agent.reset();
+        *self.overflow_recovery_attempted.write() = false;
+        self.clear_queue();
+    }
+
+    /// Emit a [`SessionEvent::HandoffComplete`] to signal the event loop that
+    /// a handoff document was written and a new session was started.
+    pub fn emit_handoff_complete(&self, doc_path: String, auto_continue: bool) {
+        self.emit(SessionEvent::HandoffComplete {
+            doc_path,
+            auto_continue,
+        });
     }
 
     /// Get a reference to the underlying [`Agent`].

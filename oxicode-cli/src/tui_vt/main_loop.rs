@@ -832,7 +832,30 @@ async fn run_event_loop(
 
             // 2. Agent → TUI events (token deltas, tool calls, …).
             Some(event) = session_rx.recv() => {
-                handle_session_event(&mut state.lock(), handle, &event);
+                // Intercept handoff-completion to clear transcript + auto-submit.
+                if let SessionEvent::HandoffComplete { doc_path, auto_continue } = &event {
+                    let mut s = state.lock();
+                    s.transcript.clear();
+                    s.message_buffer.clear();
+                    s.scroll_offset = usize::MAX;
+                    s.append_line(
+                        InlineMessageKind::Info,
+                        vec![plain_segment(format!(
+                            "Handoff written to {}. New session started.",
+                            doc_path
+                        ))],
+                    );
+                    if *auto_continue {
+                        drop(s);
+                        let _ = prompt_tx.send(format!(
+                            "Continue our work. Read the handoff document at {} \
+                             and start with the first item in \"Remaining Work\".",
+                            doc_path
+                        ));
+                    }
+                } else {
+                    handle_session_event(&mut state.lock(), handle, &event);
+                }
             }
 
             // 3. Keyboard / paste / TUI events from the input thread.
@@ -1127,6 +1150,11 @@ fn handle_session_event(state: &mut RenderState, handle: &InlineHandle, event: &
         SessionEvent::SessionInfoChanged => {
             // The session name is reflected via header context on next
             // `set_header_context`. Nothing to do here.
+        }
+        SessionEvent::HandoffComplete { .. } => {
+            // Intercepted in the event loop's session_rx arm before
+            // reaching this function — transcript clearing and prompt
+            // submission happen there. This arm exists for exhaustiveness.
         }
     }
 }

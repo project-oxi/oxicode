@@ -365,6 +365,7 @@ fn register_all(registry: &mut SlashRegistry) {
     registry.register(Box::new(FindCommand));
     registry.register(Box::new(SessionsCommand));
     registry.register(Box::new(ShortcutsCommand));
+    registry.register(Box::new(HandoffCommand));
     super::commands::register_extra(registry);
 }
 
@@ -489,6 +490,87 @@ impl SlashCommand for CompactCommand {
                 Err(err) => tracing::warn!(%err, "manual compaction failed"),
             }
         });
+        SlashOutcome::Handled
+    }
+}
+
+/// `/handoff` — generate a handoff document, start a fresh session, and
+/// optionally auto-continue. Alias: `/hd`.
+///
+///   `/handoff`                generate + new session + auto-continue
+///   `/handoff --review`       generate + new session, wait for user
+///   `/handoff --dry-run`      generate doc only, don't start new session
+///   `/handoff <slug>`         generate with a custom filename slug
+struct HandoffCommand;
+
+impl SlashCommand for HandoffCommand {
+    fn name(&self) -> &'static str {
+        "handoff"
+    }
+    fn aliases(&self) -> &'static [&'static str] {
+        &["hd"]
+    }
+    fn description(&self) -> &'static str {
+        "Generate a handoff doc and start a fresh session (alias: /hd)"
+    }
+    fn execute(&self, args: &str, ctx: &mut SlashCtx<'_>) -> SlashOutcome {
+        use crate::app::handoff::{HandoffOptions, generate_and_apply_handoff};
+
+        // Parse flags.
+        let mut auto_continue = true;
+        let mut dry_run = false;
+        let mut slug = None;
+        for arg in args.split_whitespace() {
+            match arg {
+                "--review" => auto_continue = false,
+                "--dry-run" => dry_run = true,
+                s if !s.starts_with('-') => slug = Some(s.to_string()),
+                _ => {}
+            }
+        }
+
+        // Gate: cannot hand off while agent is running.
+        if ctx.session.is_streaming() {
+            ctx.reply(
+                InlineMessageKind::Error,
+                "Cannot hand off while agent is running. Use /cancel first.",
+            );
+            return SlashOutcome::Handled;
+        }
+
+        // Gate: need enough conversation.
+        let msg_count = ctx.session.messages().len();
+        if msg_count < 2 {
+            ctx.reply(
+                InlineMessageKind::Error,
+                "Not enough conversation to hand off (need at least 2 messages).",
+            );
+            return SlashOutcome::Handled;
+        }
+
+        let opts = HandoffOptions {
+            slug,
+            auto_continue,
+            dry_run,
+        };
+        let session = ctx.session.clone();
+
+        let msg = if dry_run {
+            "Generating handoff document (dry run)\u{2026}"
+        } else if auto_continue {
+            "Generating handoff and starting new session\u{2026}"
+        } else {
+            "Generating handoff document\u{2026}"
+        };
+        ctx.reply(InlineMessageKind::Info, msg);
+
+        tokio::spawn(async move {
+            match generate_and_apply_handoff(&session, &opts).await {
+                Ok(path) => tracing::info!(%path, "handoff complete"),
+                Err(err) => tracing::warn!(%err, "handoff failed"),
+            }
+        });
+
         SlashOutcome::Handled
     }
 }
