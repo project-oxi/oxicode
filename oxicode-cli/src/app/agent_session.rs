@@ -108,6 +108,11 @@ pub enum SessionEvent {
         /// Whether to auto-submit a continuation prompt to the new session.
         auto_continue: bool,
     },
+    /// Session handoff failed — the current session is preserved unchanged.
+    HandoffFailed {
+        /// Error message describing what went wrong.
+        error: String,
+    },
 }
 
 /// Result of a compaction operation.
@@ -1223,6 +1228,12 @@ impl AgentSession {
             doc_path,
             auto_continue,
         });
+    }
+
+    /// Emit a [`SessionEvent::HandoffFailed`] so the event loop can surface
+    /// the error to the user. The current session is preserved unchanged.
+    pub fn emit_handoff_failed(&self, error: String) {
+        self.emit(SessionEvent::HandoffFailed { error });
     }
 
     /// Get a reference to the underlying [`Agent`].

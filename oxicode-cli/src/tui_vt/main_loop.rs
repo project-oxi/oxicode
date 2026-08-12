@@ -1156,6 +1156,12 @@ fn handle_session_event(state: &mut RenderState, handle: &InlineHandle, event: &
             // reaching this function — transcript clearing and prompt
             // submission happen there. This arm exists for exhaustiveness.
         }
+        SessionEvent::HandoffFailed { error } => {
+            handle.append_line(
+                InlineMessageKind::Error,
+                vec![plain_segment(format!("Handoff failed: {}", error))],
+            );
+        }
     }
 }
 

@@ -567,7 +567,10 @@ impl SlashCommand for HandoffCommand {
         tokio::spawn(async move {
             match generate_and_apply_handoff(&session, &opts).await {
                 Ok(path) => tracing::info!(%path, "handoff complete"),
-                Err(err) => tracing::warn!(%err, "handoff failed"),
+                Err(err) => {
+                    tracing::warn!(%err, "handoff failed");
+                    session.emit_handoff_failed(err.to_string());
+                }
             }
         });
 

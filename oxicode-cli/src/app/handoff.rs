@@ -111,17 +111,14 @@ fn write_handoff_doc(
     let filename = format!("{}-{}.md", timestamp, slug);
     let path = handoffs_dir.join(&filename);
 
-    // Prepend metadata header if the LLM didn't include one.
-    let full_content = if content.starts_with("# Session Handoff") {
-        content.to_string()
-    } else {
-        let prev_link = chain
-            .prev_path
-            .as_ref()
-            .map(|p| format!(" (continues from {})", p))
-            .unwrap_or_default();
-        format!("> **Chain:** #{}{}\n\n{}", chain.seq, prev_link, content)
-    };
+    // Always prepend chain metadata so detect_handoff_chain can find it
+    // in subsequent handoffs, regardless of LLM output formatting.
+    let prev_link = chain
+        .prev_path
+        .as_ref()
+        .map(|p| format!(" (continues from {})", p))
+        .unwrap_or_default();
+    let full_content = format!("> **Chain:** #{}{}\n\n{}", chain.seq, prev_link, content);
 
     std::fs::write(&path, &full_content).context("Failed to write handoff document")?;
 
