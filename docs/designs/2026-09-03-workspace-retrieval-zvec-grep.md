@@ -399,6 +399,19 @@ warm page cache, best of 5 runs of `cargo run --release -p oxicode-agent
 | `needle_fn`  | 58 ms         | 21 ms                | ~19 ms       |
 | `fn execute` | 59 ms         | 18 ms                | ~19 ms       |
 
+Peak memory (same corpus and pattern `fn execute`, per-engine process via
+the harness's `[legacy|v2]` filter under `/usr/bin/time -l`, maxRSS):
+
+| engine               | best latency | maxRSS            |
+|----------------------|-------------:|------------------:|
+| legacy walker        | 60 ms        | 17.7 MiB          |
+| ExactSearchEngine v2 | 16 ms        | 10.5 MiB          |
+
+v2 improves both latency (~3.75x) and peak memory (-41%) against the legacy
+walker; the streaming matcher holds only a ring buffer of the last
+`context` lines per in-flight file (nothing when `context == 0`), never a
+whole-file buffer.
+
 On this corpus v2 is consistently ~3x faster than the legacy walker and in
 the same band as the manual `rg -c <pattern> .` yardstick (best of 5, warm);
 `rg` is a manual lower-bound reference only — product code never shells out

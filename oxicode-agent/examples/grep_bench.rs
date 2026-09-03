@@ -1,5 +1,5 @@
 //! Manual benchmark: legacy walker vs ExactSearchEngine on a real tree.
-//! Run: cargo run --release -p oxicode-agent --example grep_bench -- <path> [pattern]
+//! Run: cargo run --release -p oxicode-agent --example grep_bench -- <path> [pattern] [legacy|v2]
 //! rg yardstick (manual): rg -c <pattern> <path>
 
 use oxicode_agent::tools::{AgentTool, GrepTool, ToolContext};
@@ -10,11 +10,20 @@ async fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().expect("usage: grep_bench <path> [pattern]");
     let pattern = args.next().unwrap_or_else(|| "fn execute".to_string());
+    // Optional engine filter so each engine can be measured in its own
+    // process (e.g. for per-engine peak-RSS via `/usr/bin/time -l`).
+    let only = args.next();
 
     for (name, tool) in [
         ("legacy", GrepTool::legacy_with_cwd(path.clone().into())),
         ("v2     ", GrepTool::with_cwd(path.clone().into())),
     ] {
+        if let Some(only) = &only {
+            let only = only.trim();
+            if (only == "legacy" && name != "legacy") || (only == "v2" && !name.starts_with("v2")) {
+                continue;
+            }
+        }
         let ctx = ToolContext::new(&path);
         let params = serde_json::json!({ "pattern": pattern, "max_results": 500 });
         // warmup
