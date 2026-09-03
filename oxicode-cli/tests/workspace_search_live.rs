@@ -40,7 +40,10 @@ async fn registers_root_and_returns_ranked_hits() {
         .args(["admin", "init", "--dir", brain.path().to_str().unwrap()])
         .status()
         .unwrap();
-    assert!(init.success(), "oxibrain admin init on the temp store failed");
+    assert!(
+        init.success(),
+        "oxibrain admin init on the temp store failed"
+    );
 
     let mut settings = oxicode::store::settings::Settings::default();
     settings.workspace_search.enabled = true;
@@ -49,11 +52,9 @@ async fn registers_root_and_returns_ranked_hits() {
     // pinned binary). Registering into it exercises the real happy path.
     settings.workspace_search.space = "personal".into();
 
-    let backend = oxicode::foundation::brain_workspace::create_workspace_search_backend(
-        &settings,
-        ws.path(),
-    )
-    .expect("backend constructed");
+    let backend =
+        oxicode::foundation::brain_workspace::create_workspace_search_backend(&settings, ws.path())
+            .expect("backend constructed");
 
     let tool = WorkspaceSearchTool::new(backend);
     let ctx = ToolContext::new(ws.path());
@@ -72,6 +73,9 @@ async fn registers_root_and_returns_ranked_hits() {
         .await
         .expect("workspace_search call should succeed against the live store");
     let text = out.output;
-    assert!(text.contains("auth.rs"), "expected a hit in auth.rs: {text}");
+    assert!(
+        text.contains("auth.rs"),
+        "expected a hit in auth.rs: {text}"
+    );
     assert!(text.contains("Verify each passage"), "{text}");
 }
