@@ -137,6 +137,10 @@ zip = "8"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 oxibrain-client = "0.2"
+# Document-plane client (renamed): `workspace_search` spawns a daemonless
+# `oxibrain admin serve --stdio` child. The legacy 0.2 memory transport
+# above is untouched.
+oxibrain-client-brain = { package = "oxibrain-client", version = "0.12.1" }
 
 [features]
 default = ["self-update", "native-browser", "foundation"]

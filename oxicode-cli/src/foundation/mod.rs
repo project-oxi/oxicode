@@ -42,6 +42,9 @@
 
 pub mod brain;
 pub mod brain_control;
+/// `workspace_search` backend — `BrainWorkspaceSearch` over the oxibrain
+/// document plane (daemonless stdio child).
+pub mod brain_workspace;
 pub mod compat_import;
 pub mod compatibility;
 pub mod credentials;
