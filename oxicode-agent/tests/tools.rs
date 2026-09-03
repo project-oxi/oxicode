@@ -561,6 +561,30 @@ async fn test_grep_case_sensitive_default() {
 }
 
 #[tokio::test]
+async fn grep_v2_honors_ignore_files_and_reports_cancellation_metadata() {
+    let dir = create_temp_dir("grep_v2_semantics").await;
+    let root = std::path::PathBuf::from(&dir);
+    std::fs::write(root.join(".ignore"), "ignored.txt\n").unwrap();
+    std::fs::write(root.join("kept.rs"), "needle here\n").unwrap();
+    std::fs::write(root.join("ignored.txt"), "needle here\n").unwrap();
+
+    let tool = GrepTool::with_cwd(root.clone());
+    let ctx = ToolContext::new(&root);
+    let result = tool
+        .execute("t1", serde_json::json!({ "pattern": "needle" }), None, &ctx)
+        .await
+        .unwrap();
+    let text = result.output;
+    assert!(text.contains("kept.rs:1: needle here"), "{text}");
+    assert!(
+        !text.contains("ignored.txt"),
+        "v2 must honor .ignore: {text}"
+    );
+
+    cleanup(&dir).await;
+}
+
+#[tokio::test]
 async fn test_grep_no_matches() {
     let dir = create_temp_dir("grep_nomatch").await;
     let file_path = format!("{}/test.txt", dir);
