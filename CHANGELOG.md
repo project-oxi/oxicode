@@ -5,6 +5,17 @@ All notable changes to the oxicode project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `workspace_search` (opt-in, `[workspace_search] enabled = true`): semantic
+  workspace discovery over the local oxibrain document plane via a daemonless
+  `admin serve --stdio` child. Registers the workspace as an idempotent
+  document root, searches the documents plane (hybrid), post-filters by root
+  alias, and returns ranked chunk-level passages with a freshness report and
+  a verify-with-read/grep reminder. Zero startup cost when disabled.
+
 ## [0.81.0] — 2026-09-01
 
 ### Added
