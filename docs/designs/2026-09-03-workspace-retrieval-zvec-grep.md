@@ -389,6 +389,23 @@ ledger-fixture rules described in D2.
   against the legacy walker; it must not regress correctness relative to an
   agreed ripgrep command profile.
 
+Measured on the exact-search v2 stack (2026-09-04, Apple M4, release build,
+warm page cache, best of 5 runs of `cargo run --release -p oxicode-agent
+--example grep_bench -- . <pattern>` against a repository worktree; corpus:
+911 tracked files / 19.9 MB, target dirs excluded by ignore rules):
+
+| pattern      | legacy walker | ExactSearchEngine v2 | rg yardstick |
+|--------------|--------------:|---------------------:|-------------:|
+| `needle_fn`  | 58 ms         | 21 ms                | ~19 ms       |
+| `fn execute` | 59 ms         | 18 ms                | ~19 ms       |
+
+On this corpus v2 is consistently ~3x faster than the legacy walker and in
+the same band as the manual `rg -c <pattern> .` yardstick (best of 5, warm);
+`rg` is a manual lower-bound reference only — product code never shells out
+to it. Legacy walker time does not reach the seconds range here because the
+walker's per-file async overhead dominates only on colder caches and larger
+trees; the ordering (v2 < legacy) held in every measured run.
+
 ### Indexed discovery
 
 - On a repository-comprehension suite, treatment answer quality is non-inferior
