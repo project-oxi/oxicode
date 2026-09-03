@@ -1,6 +1,6 @@
 # Workspace Retrieval: Native Exact Search and oxibrain-Backed Discovery
 
-**Status:** Proposed  
+**Status:** Adopted for Phase 1 (exact-search v2 shipped; Phase 2 skeleton tracked separately)  
 **Date:** 2026-09-03  
 **Owners:** Oxicode maintainers  
 **Depends on:** `oxicode-agent` tools, `oxicode-sdk` behavior packs, `oxicode-cli`
