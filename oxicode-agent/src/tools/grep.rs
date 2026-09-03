@@ -605,6 +605,8 @@ impl AgentTool for GrepTool {
                     result.metadata = Some(json!({
                         "lines_truncated": o.lines_truncated,
                         "cancelled": o.cancelled,
+                        "message":
+                            "Some lines truncated to 500 chars. Use read tool to see full lines.",
                     }));
                 }
                 Ok(result)

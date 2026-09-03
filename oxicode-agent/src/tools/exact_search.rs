@@ -121,7 +121,6 @@ pub(crate) fn search(
         Arc::new(parking_lot::Mutex::new(Vec::new()));
     let budget = Arc::new(AtomicUsize::new(0));
     let done = Arc::new(AtomicBool::new(false));
-    let lines_truncated = Arc::new(AtomicBool::new(false));
     let cancelled = Arc::new(AtomicBool::new(false));
 
     let mut builder = ignore::WalkBuilder::new(root);
@@ -141,7 +140,6 @@ pub(crate) fn search(
         let budget = budget.clone();
         let done = done.clone();
         let cancelled = cancelled.clone();
-        let lines_truncated = lines_truncated.clone();
         let cancel = cancel.clone();
         let root = root.to_path_buf();
         let req_ctx = req.context;
@@ -164,7 +162,11 @@ pub(crate) fn search(
                 None => return ignore::WalkState::Continue,
             };
             if ft.is_dir() {
-                if let Some(name) = entry.file_name().to_str()
+                // The walk root itself is always searched, even when its
+                // basename is a built-in artifact dir ("explicit path roots
+                // are always searched").
+                if entry.depth() > 0
+                    && let Some(name) = entry.file_name().to_str()
                     && ARTIFACT_DIRS.contains(&name)
                 {
                     return ignore::WalkState::Skip;
@@ -184,12 +186,9 @@ pub(crate) fn search(
                     return ignore::WalkState::Continue;
                 }
             }
-            let result = search_file(path, &root, &re, req_ctx, req_max, &budget, &done);
-            if result.truncated_any {
-                lines_truncated.store(true, Ordering::Relaxed);
-            }
-            if !result.block.lines.is_empty() {
-                blocks.lock().push(result.block);
+            let block = search_file(path, &root, &re, req_ctx, req_max, &budget, &done);
+            if !block.lines.is_empty() {
+                blocks.lock().push(block);
             }
             ignore::WalkState::Continue
         })
@@ -201,7 +200,7 @@ pub(crate) fn search(
     };
     blocks.sort_by(|a, b| a.rel.cmp(&b.rel));
 
-    let mut lines_truncated_flag = lines_truncated.load(Ordering::Relaxed);
+    let mut lines_truncated_flag = false;
     let mut rendered: Vec<String> = Vec::new();
     for block in &blocks {
         for (line_no, is_context, text) in &block.lines {
@@ -229,7 +228,7 @@ pub(crate) fn search(
     } else {
         format!("Found {} matches:\n", rendered.len()) + &rendered.join("\n")
     };
-    if was_cancelled && !rendered.is_empty() {
+    if was_cancelled {
         output.push_str(&format!(
             "\nSearch cancelled: results are partial ({} shown).",
             rendered.len()
@@ -249,16 +248,14 @@ struct FileBlock {
     lines: Vec<(usize, bool, String)>,
 }
 
-struct FileSearchResult {
-    block: FileBlock,
-    truncated_any: bool,
-}
-
-/// Stream one file line-by-line. Pass 1 collects match line numbers; pass 2
-/// emits context windows for matches whose output-line budget was claimed
-/// atomically, so parallel workers cannot exceed `max_results` in total.
-/// Unreadable files and mid-file NUL bytes are skipped silently (v1 parity:
-/// `read_to_string` failed on those before).
+/// Stream one file line-by-line. Only a ring buffer of the last `context`
+/// lines is retained (nothing at all when `context == 0`); a match claims
+/// its output-line window from the shared budget atomically, then emits
+/// before-context from the ring, the match line, and holds the window open
+/// for the next `context` lines — so parallel workers cannot exceed
+/// `max_results` rows in total and no whole-file buffer is ever built.
+/// A NUL byte past the sniff discards the file's accumulated output
+/// wholesale (v1 parity); unreadable files are skipped silently.
 fn search_file(
     path: &Path,
     root: &Path,
@@ -267,13 +264,10 @@ fn search_file(
     max_results: usize,
     budget: &AtomicUsize,
     done: &AtomicBool,
-) -> FileSearchResult {
-    let empty = |rel: String| FileSearchResult {
-        block: FileBlock {
-            rel,
-            lines: Vec::new(),
-        },
-        truncated_any: false,
+) -> FileBlock {
+    let empty = |rel: String| FileBlock {
+        rel,
+        lines: Vec::new(),
     };
     let rel = rel_to_root(path, root).to_string_lossy().to_string();
     let file = match File::open(path) {
@@ -282,10 +276,9 @@ fn search_file(
     };
     let reader = BufReader::new(file);
 
-    // Pass 1: stream lines, remember matches. A NUL past the sniff marks a
-    // binary file — discard everything (v1 parity).
-    let mut raw_lines: Vec<String> = Vec::new();
-    let mut match_lines: Vec<usize> = Vec::new();
+    let mut lines: Vec<(usize, bool, String)> = Vec::new();
+    let mut ring: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let mut pending_after = 0usize;
     for (idx, line) in reader.split(b'\n').enumerate() {
         let Ok(bytes) = line else {
             break; // mid-file I/O error → keep what we have
@@ -297,40 +290,45 @@ fn search_file(
         if text.ends_with('\r') {
             text.pop();
         }
-        if re.is_match(&text) {
-            match_lines.push(idx);
-        }
-        raw_lines.push(text);
-    }
 
-    // Pass 2: claim budget per match window, then emit rows.
-    let mut lines: Vec<(usize, bool, String)> = Vec::new();
-    for &m in &match_lines {
+        // After-context still owed to the previous match's window.
+        if pending_after > 0 {
+            lines.push((idx + 1, true, text.clone()));
+            pending_after -= 1;
+        }
+
+        if re.is_match(&text) && !done.load(Ordering::Relaxed) {
+            // Window: up to `context` lines before (all in the ring), the
+            // match itself, and `context` after (claimed optimistically —
+            // short files simply emit fewer rows than claimed).
+            let before = ring.len();
+            let claim = budget.fetch_add(before + 1 + context, Ordering::Relaxed);
+            if claim >= max_results {
+                done.store(true, Ordering::Relaxed);
+                break;
+            }
+            for (offset, l) in ring.iter().enumerate() {
+                lines.push((idx + 1 - before + offset, true, l.clone()));
+            }
+            lines.push((idx + 1, false, text.clone()));
+            pending_after = context;
+        }
+
+        if context > 0 {
+            if ring.len() == context {
+                ring.pop_front();
+            }
+            ring.push_back(text);
+        }
+
         if done.load(Ordering::Relaxed) {
-            break;
-        }
-        let start = if context > 0 {
-            m.saturating_sub(context)
-        } else {
-            m
-        };
-        let end = std::cmp::min(raw_lines.len(), m + context + 1);
-        let claim = budget.fetch_add(end - start, Ordering::Relaxed);
-        if claim >= max_results {
-            done.store(true, Ordering::Relaxed);
-            break;
-        }
-        for (j, l) in raw_lines.iter().enumerate().take(end).skip(start) {
-            let is_context = j != m;
-            lines.push((j + 1, is_context, l.clone()));
+            break; // budget exhausted here or in a sibling worker
         }
     }
 
-    FileSearchResult {
-        block: FileBlock { rel, lines },
-        truncated_any: false,
-    }
+    FileBlock { rel, lines }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -609,5 +607,44 @@ mod tests {
         let cancel = Arc::new(AtomicBool::new(true)); // cancelled before start
         let out = search(&root, &req("alpha"), cancel).unwrap();
         assert!(out.cancelled);
+    }
+
+    #[test]
+    fn explicit_artifact_dir_root_is_searched() {
+        let (_d, root) = ws();
+        std::fs::create_dir_all(root.join("target")).unwrap();
+        std::fs::write(root.join("target/inner.rs"), "alpha\n").unwrap();
+        // The walk root itself is always searched, even when its basename is
+        // a built-in artifact dir ("explicit path roots are always searched").
+        let out = run(&root.join("target"), &req("alpha"));
+        assert!(out.output.contains("inner.rs:1: alpha"), "{}", out.output);
+    }
+
+    #[test]
+    fn mid_file_nul_discards_accumulated_output() {
+        let (_d, root) = ws();
+        // NUL sits past the 8 KiB sniff window, so only the streaming NUL
+        // check can catch it: everything scanned from this file is dropped.
+        let pad = "x".repeat(9000);
+        std::fs::write(
+            root.join("src/lib.rs"),
+            format!("alpha {pad}\nbad\x00nul\nalpha end\n"),
+        )
+        .unwrap();
+        let out = run(&root, &req("alpha"));
+        assert!(!out.output.contains("src/lib.rs"), "{}", out.output);
+        assert!(out.output.contains("notes.txt:1: alpha here"));
+    }
+
+    #[test]
+    fn cancellation_with_zero_results_still_discloses() {
+        let (_d, root) = ws();
+        let cancel = Arc::new(AtomicBool::new(true)); // cancelled before start
+        let out = search(&root, &req("zzz_not_there"), cancel).unwrap();
+        assert!(out.cancelled);
+        assert_eq!(
+            out.output,
+            "No matches found\nSearch cancelled: results are partial (0 shown)."
+        );
     }
 }
