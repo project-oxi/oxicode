@@ -551,4 +551,63 @@ mod tests {
         assert!(out.output.contains("fn alpha() {}"));
         assert!(!out.output.contains('\r'));
     }
+
+    #[test]
+    fn context_lines_render_with_v1_format() {
+        let (_d, root) = ws();
+        std::fs::write(root.join("src/lib.rs"), "one\ntwo\nthree\nfour\nfive\n").unwrap();
+        let mut r = req("three");
+        r.context = 1;
+        let out = run(&root, &r);
+        assert!(out.output.contains("src/lib.rs-2- two"), "{}", out.output);
+        assert!(out.output.contains("src/lib.rs:3: three"));
+        assert!(out.output.contains("src/lib.rs-4- four"));
+    }
+
+    #[test]
+    fn max_results_budget_limits_output_lines() {
+        let (_d, root) = ws();
+        std::fs::write(
+            root.join("src/lib.rs"),
+            "alpha 1\nalpha 2\nalpha 3\nalpha 4\nalpha 5\n",
+        )
+        .unwrap();
+        let mut r = req("alpha");
+        r.max_results = 2;
+        let out = run(&root, &r);
+        let body = out.output.lines().count() - 1; // minus header
+        assert!(body <= 2, "budget exceeded: {}", out.output);
+        assert!(out.output.contains("Found"));
+    }
+
+    #[test]
+    fn long_lines_are_truncated_with_flag() {
+        let (_d, root) = ws();
+        let long = format!("alpha {}\n", "x".repeat(700));
+        std::fs::write(root.join("src/lib.rs"), long).unwrap();
+        let out = run(&root, &req("alpha"));
+        assert!(out.lines_truncated);
+        assert!(out.output.contains("... [truncated]"));
+        assert!(out.output.lines().nth(1).unwrap().chars().count() < 600);
+    }
+
+    #[test]
+    fn unicode_long_line_truncates_on_char_boundary() {
+        let (_d, root) = ws();
+        let long = format!("alpha {}\n", "한".repeat(600)); // 3 bytes each
+        std::fs::write(root.join("src/lib.rs"), long).unwrap();
+        let out = run(&root, &req("alpha")); // must not panic
+        assert!(out.lines_truncated);
+    }
+
+    #[test]
+    fn cancellation_returns_partial_with_marker() {
+        let (_d, root) = ws();
+        for i in 0..40 {
+            std::fs::write(root.join(format!("f{i:03}.txt")), "alpha here\n").unwrap();
+        }
+        let cancel = Arc::new(AtomicBool::new(true)); // cancelled before start
+        let out = search(&root, &req("alpha"), cancel).unwrap();
+        assert!(out.cancelled);
+    }
 }
