@@ -463,4 +463,92 @@ mod tests {
         r2.include = Some("docs/**/*.rs".to_string());
         assert_eq!(run(&root, &r2).output, "No matches found");
     }
+
+    #[test]
+    fn dot_ignore_files_are_honored() {
+        let (_d, root) = ws();
+        std::fs::write(root.join(".ignore"), "notes.txt\n").unwrap();
+        let out = run(&root, &req("alpha"));
+        assert!(out.output.contains("src/lib.rs:1:"));
+        assert!(!out.output.contains("notes.txt"));
+    }
+
+    #[test]
+    fn gitignore_honored_inside_git_repo() {
+        let (_d, root) = ws();
+        std::fs::write(root.join(".gitignore"), "notes.txt\n").unwrap();
+        // run `git init` so the repo is a git worktree (rg/ignore parity:
+        // .gitignore is authoritative only inside one).
+        let status = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&root)
+            .status()
+            .expect("git available");
+        assert!(status.success());
+        let out = run(&root, &req("alpha"));
+        assert!(out.output.contains("src/lib.rs:1:"));
+        assert!(!out.output.contains("notes.txt"));
+    }
+
+    #[test]
+    fn artifact_dirs_are_skipped() {
+        let (_d, root) = ws();
+        std::fs::create_dir_all(root.join("target/debug")).unwrap();
+        std::fs::write(root.join("target/debug/junk.rs"), "alpha\n").unwrap();
+        std::fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        std::fs::write(root.join("node_modules/pkg/x.rs"), "alpha\n").unwrap();
+        let out = run(&root, &req("alpha"));
+        assert!(out.output.contains("src/lib.rs:1:"));
+        assert!(!out.output.contains("target"));
+        assert!(!out.output.contains("node_modules"));
+    }
+
+    #[test]
+    fn hidden_entries_are_skipped() {
+        let (_d, root) = ws();
+        std::fs::create_dir_all(root.join(".secret")).unwrap();
+        std::fs::write(root.join(".secret/a.rs"), "alpha\n").unwrap();
+        std::fs::write(root.join(".hidden_file"), "alpha\n").unwrap();
+        let out = run(&root, &req("alpha"));
+        assert!(!out.output.contains(".secret"));
+        assert!(!out.output.contains(".hidden_file"));
+    }
+
+    #[test]
+    fn binary_files_are_skipped() {
+        let (_d, root) = ws();
+        let mut bytes = b"alpha then NUL".to_vec();
+        bytes.push(0);
+        std::fs::write(root.join("blob.bin"), &bytes).unwrap();
+        let out = run(&root, &req("alpha"));
+        assert!(out.output.contains("src/lib.rs:1:"));
+        assert!(!out.output.contains("blob.bin"));
+    }
+
+    #[test]
+    fn symlinks_are_not_followed() {
+        let (_d, root) = ws();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("outer.rs"), "alpha\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path(), root.join("linked")).unwrap();
+        let out = run(&root, &req("alpha"));
+        assert!(!out.output.contains("outer.rs"), "{}", out.output);
+    }
+
+    #[test]
+    fn explicit_file_root_is_searched() {
+        let (_d, root) = ws();
+        let out = run(&root.join("notes.txt"), &req("alpha"));
+        assert!(out.output.contains("notes.txt:1: alpha here"));
+    }
+
+    #[test]
+    fn crlf_lines_match_and_render_clean() {
+        let (_d, root) = ws();
+        std::fs::write(root.join("src/lib.rs"), "fn alpha() {}\r\n").unwrap();
+        let out = run(&root, &req("alpha"));
+        assert!(out.output.contains("fn alpha() {}"));
+        assert!(!out.output.contains('\r'));
+    }
 }
