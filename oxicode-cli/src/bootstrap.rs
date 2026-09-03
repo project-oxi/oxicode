@@ -224,6 +224,17 @@ pub async fn build_app(args: &CliArgs) -> Result<crate::App> {
         );
     }
 
+    // Optional oxibrain-backed workspace discovery (design D3/D4): registered
+    // only when the user enabled it; zero cost otherwise.
+    if let Some(backend) =
+        crate::foundation::brain_workspace::create_workspace_search_backend(&settings, &cwd)
+    {
+        tools.register_arc(std::sync::Arc::new(
+            oxicode_agent::tools::WorkspaceSearchTool::new(backend),
+        ));
+        tracing::info!("workspace_search registered (oxibrain document plane)");
+    }
+
     let mut app = crate::App::from_oxicode(
         oxicode,
         settings,
