@@ -74,9 +74,15 @@ fn ledger() -> CompatibilityContract {
             entry(
                 "read-write-search",
                 FeatureStatus::Equivalent,
-                &["behavior::hashline_read_edit_stale_anchor_recovery"],
+                &[
+                    "behavior::hashline_read_edit_stale_anchor_recovery",
+                    "behavior::grep_search_v2_contract",
+                ],
                 "File read/write/grep/find/ls exercised through pack-installed registry with \
-                 scripted transcripts; no OMP-specific deviation observed.",
+                 scripted transcripts; no OMP-specific deviation observed. \
+                 grep.search.v2 (replaces grep.search.v1) backs the exposed grep tool with \
+                 ExactSearchEngine: ignore-file-aware, streaming, cancellable; v1 walker \
+                 remains only via with_builtins_cwd until 0.83.",
             ),
             entry(
                 "hashline-anchors",
@@ -284,10 +290,15 @@ pub fn pack() -> Result<BehaviorPack, BehaviorInstallError> {
                 }) as ToolFactory
             },
         )?
+        // grep: v2 routes through ExactSearchEngine (ignore-aware, streaming,
+        // cancellable). Semantics changed with the engine, so the
+        // implementation id is bumped and declares the lineage per the
+        // replacement policy.
         .with_tool(
-            descriptor("grep.search.v1", "grep")
+            descriptor("grep.search.v2", "grep")
                 .capability(CapabilityClass::Search)
                 .side_effect(SideEffectClass::ReadOnly)
+                .replaces("grep.search.v1")
                 .essential(),
             simple_tool(|p| Arc::new(GrepTool::with_cwd(p.to_path_buf()))),
         )?

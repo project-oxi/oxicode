@@ -6,6 +6,7 @@ mod delegation_fixture;
 mod denial_fixture;
 mod duplicate_fixture;
 mod eval_fixture;
+mod grep_fixture;
 mod hashline_fixture;
 mod lsp_fixture;
 mod routing_fixture;
