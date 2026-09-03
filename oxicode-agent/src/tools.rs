@@ -907,6 +907,10 @@ pub mod edit;
 pub mod edit_diff;
 /// Eval tool — persistent-kernel code execution (scaffold).
 pub mod eval_tool;
+/// ExactSearchEngine — private streaming search backend behind `GrepTool` v2.
+// allow(dead_code) is interim: removed when the v2 wiring consumes the engine.
+#[allow(dead_code)]
+mod exact_search;
 /// Serialised file-mutation queue.
 pub mod file_mutation_queue;
 /// File-fsystem find tool.
