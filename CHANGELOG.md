@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   kept, real glob `include`, cancellation returns partial results with a
   `cancelled` marker). The legacy walker remains reachable via
   `ToolRegistry::with_builtins_cwd` until 0.83.
+- `workspace_search` (opt-in, `[workspace_search] enabled = true`): semantic
+  workspace discovery over the local oxibrain document plane via a daemonless
+  `admin serve --stdio` child. Registers the workspace as an idempotent
+  document root, searches the documents plane (hybrid), post-filters by root
+  alias, and returns ranked chunk-level passages with a freshness report and
+  a verify-with-read/grep reminder. Zero startup cost when disabled.
 
 ### Changed
 

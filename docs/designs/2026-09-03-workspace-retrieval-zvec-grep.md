@@ -1,6 +1,9 @@
 # Workspace Retrieval: Native Exact Search and oxibrain-Backed Discovery
 
-**Status:** Adopted for Phase 1 (exact-search v2 shipped; Phase 2 skeleton tracked separately)  
+**Status:** Adopted — Phase 1 (exact-search v2, `grep.search.v2`) and the
+Phase 2 skeleton (opt-in `workspace_search` over the oxibrain document
+plane) shipped 2026-09-04. Paired baseline/treatment evaluations remain
+outstanding (Phase 3 gate).  
 **Date:** 2026-09-03  
 **Owners:** Oxicode maintainers  
 **Depends on:** `oxicode-agent` tools, `oxicode-sdk` behavior packs, `oxicode-cli`
@@ -349,19 +352,21 @@ ledger-fixture rules described in D2.
 
 ### Phase 2 — Indexed discovery skeleton (oxibrain document plane)
 
-- Bump `oxibrain-client` to 0.10.1+ in `oxicode-cli` as a renamed dependency
+- [x] Bump `oxibrain-client` to 0.12.1 in `oxibrain-cli` as a renamed dependency
   (`oxibrain-client-brain`), keeping the legacy 0.2 memory wiring untouched
   during the migration window; unify in a dedicated memory-transport PR.
-  (0.10.1 already ships `register_document_root`, `search_planes`, and the
+  (0.12.1 ships `register_document_root`, `search_planes`, and the
   `admin serve --stdio --dir` spawn argv; pin client and binary together.)
-- Add `WorkspaceSearchBackend` + `WorkspaceSearchTool` (agent crate) and
+- [x] Add `WorkspaceSearchBackend` + `WorkspaceSearchTool` (agent crate) and
   `BrainWorkspaceSearch` (CLI) per D3/D4, behind
   `[workspace_search] enabled` (default false).
-- Unit-test the tool against a fake backend; integration-test the CLI
-  backend in-process against `run_session` (duplex pipe, temp `--dir`),
-  plus one ignored live test against a real pinned binary.
-- Wire conditional registration + prompt fragment in the composition root.
-- Run controlled paired baseline/treatment evaluations.  The only treatment
+- [x] Unit-test the tool against a fake backend; plus one ignored live test
+  against a real pinned binary. Reproduce with:
+  `OXICODE_BRAIN_WS_BIN=<path-to-oxibrain> cargo nextest run -p oxicode-cli --test workspace_search_live -- --ignored`
+  (the test initializes an isolated temp store via `oxibrain admin init` and
+  registers into the fresh store's default space, `personal`).
+- [x] Wire conditional registration + prompt fragment in the composition root.
+- [ ] Run controlled paired baseline/treatment evaluations.  The only treatment
   changes are the prepared index, the optional tool, and its conditional
   routing guidance.
 - No setup wizard, automatic spawning, or index-management agent tool.

@@ -976,6 +976,9 @@ pub mod tts_tool;
 pub mod vibe_tool;
 /// Multi-engine web search tool (oxibrowser search module).
 pub mod web_search;
+/// Workspace search tool — optional indexed discovery via a
+/// composition-root-supplied backend.
+pub mod workspace_search;
 /// File writing tool.
 pub mod write;
 /// Yield tool — subagent result submission.
@@ -1003,6 +1006,9 @@ pub use memory_recall::MemoryRecallTool;
 pub use memory_reflect::MemoryReflectTool;
 pub use memory_retain::MemoryRetainTool;
 pub use subagent::SubagentTool;
+pub use workspace_search::{
+    SearchPassage, WorkspaceSearchBackend, WorkspaceSearchPage, WorkspaceSearchTool,
+};
 pub use write::WriteTool;
 
 /// Tool registry for managing available tools

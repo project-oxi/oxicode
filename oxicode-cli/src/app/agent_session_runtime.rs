@@ -329,6 +329,21 @@ pub async fn create_agent_session_from_services(
     // Resolve thinking level
     let thinking_level = options.thinking_level.unwrap_or(settings.thinking_level);
 
+    // Optional workspace_search routing guidance (design D3/D4): present
+    // only when the user enabled the tool; absent otherwise.
+    let workspace_search_block = if settings.workspace_search.enabled {
+        Some(
+            "For a workspace-grounded question with unknown wording or location, \
+             use one focused workspace_search query. Verify its source passages \
+             with read or grep. Use grep for exact identifiers, paths, literals, \
+             regular expressions, and exhaustive occurrence searches. Do not use \
+             workspace_search to create, update, or delete an index."
+                .to_string(),
+        )
+    } else {
+        None
+    };
+
     // Get provider and model
     if model_id.is_empty() {
         // No model — return minimal session, TUI setup wizard will handle configuration
@@ -390,6 +405,7 @@ pub async fn create_agent_session_from_services(
                 thinking_level,
                 memory_opt,
                 None,
+                workspace_search_block.clone(),
                 persona.as_ref(),
             )),
             timeout_seconds: settings.tool_timeout_seconds,
@@ -499,8 +515,13 @@ pub async fn create_agent_session_from_services(
     } else {
         Some(memory_block)
     };
-    let system_prompt =
-        build_system_prompt_with_memory(thinking_level, memory_block_opt, None, persona.as_ref());
+    let system_prompt = build_system_prompt_with_memory(
+        thinking_level,
+        memory_block_opt,
+        None,
+        workspace_search_block,
+        persona.as_ref(),
+    );
     let compaction_strategy = if settings.auto_compaction {
         oxicode_sdk::CompactionStrategy::Threshold(0.8)
     } else {
@@ -1009,7 +1030,7 @@ fn parse_model_id(model_id: &str) -> (String, String) {
 ///
 /// Delegates to [`crate::prompt::system_prompt::build_system_prompt`].
 pub(crate) fn build_system_prompt(thinking_level: ThinkingLevel) -> String {
-    build_system_prompt_with_memory(thinking_level, None, None, None)
+    build_system_prompt_with_memory(thinking_level, None, None, None, None)
 }
 
 /// Resolve the `default` persona from a [`oxicode_sdk::PersonaProvider`].
@@ -1019,7 +1040,6 @@ pub(crate) fn build_system_prompt(thinking_level: ThinkingLevel) -> String {
 /// every case the session prompt falls back to the no-persona default.
 /// Errors are logged at `warn`; persona resolution is non-fatal.
 ///
-/// This is the single entry point that the TUI/session path uses to
 /// bridge the registered `PersonaProvider` port to the
 /// [`build_system_prompt_with_memory`] builder. Callers that already
 /// hold a `Persona` (e.g. tests, or non-default selection paths) can
@@ -1061,8 +1081,10 @@ fn append_memory_and_tool_guidance(memory_block: Option<String>) -> Option<Strin
 /// Build the system prompt with optional project-memory blocks: a
 /// raw project-recall block (`memory_block`) and an autonomous
 /// read-path block (`read_path_block`) generated from
-/// `<memory-root>/memory_summary.md` (omp `read-path.md` port).
-/// Both are appended after the standard system prompt body.
+/// `<memory-root>/memory_summary.md` (omp `read-path.md` port), and the
+/// optional `workspace_search_block` routing fragment (present only when
+/// the user enabled `[workspace_search]`). All are appended after the
+/// standard system prompt body.
 ///
 /// `persona`, when `Some`, contributes its `system_prompt` body to
 /// the rendered prompt via `BuildSystemPromptOptions::persona_prompt`.
@@ -1074,15 +1096,22 @@ pub(crate) fn build_system_prompt_with_memory(
     thinking_level: ThinkingLevel,
     memory_block: Option<String>,
     read_path_block: Option<String>,
+    workspace_search_block: Option<String>,
     persona: Option<&oxicode_sdk::Persona>,
 ) -> String {
-    // Concatenate the two optional blocks in order (raw recall
-    // first, then the autonomous read-path guidance).
+    // Concatenate the optional blocks in order (raw recall first, then
+    // the autonomous read-path guidance, then the workspace_search
+    // routing fragment).
     let combined = match (memory_block, read_path_block) {
         (Some(m), Some(r)) => Some(format!("{}{}", m, r)),
         (Some(m), None) => Some(m),
         (None, Some(r)) => Some(r),
         (None, None) => None,
+    };
+    let combined = match (combined, workspace_search_block) {
+        (Some(existing), Some(w)) => Some(format!("{existing}\n\n{w}")),
+        (None, Some(w)) => Some(w),
+        (existing, None) => existing,
     };
     let options = crate::prompt::system_prompt::BuildSystemPromptOptions {
         custom_prompt: crate::prompt::system_prompt::thinking_level_prompt(thinking_level),
@@ -1325,8 +1354,13 @@ mod tests {
         assert!(resolved.system_prompt.contains("security"));
         assert!(resolved.preferred_model.is_none());
 
-        let prompt =
-            build_system_prompt_with_memory(ThinkingLevel::Medium, None, None, Some(&resolved));
+        let prompt = build_system_prompt_with_memory(
+            ThinkingLevel::Medium,
+            None,
+            None,
+            None,
+            Some(&resolved),
+        );
         assert!(
             prompt.contains("# Persona"),
             "persona block must be rendered when persona is provided"
@@ -1340,7 +1374,8 @@ mod tests {
         assert!(!prompt.contains("Allowed tools:"));
 
         // Negative case: no persona → no persona block.
-        let no_persona = build_system_prompt_with_memory(ThinkingLevel::Medium, None, None, None);
+        let no_persona =
+            build_system_prompt_with_memory(ThinkingLevel::Medium, None, None, None, None);
         assert!(!no_persona.contains("# Persona"));
     }
 }

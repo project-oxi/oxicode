@@ -327,6 +327,13 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub memory_enabled: bool,
 
+    // ── Workspace search (D3/D4) ─────────────────────────────────────
+    /// oxibrain-backed workspace discovery (`workspace_search` tool).
+    /// Everything defaults OFF — no spawn, no registration, no prompt
+    /// fragment unless explicitly enabled (design D4).
+    #[serde(default)]
+    pub workspace_search: WorkspaceSearchSettings,
+
     // ── TTSR (③) ─────────────────────────────────────────────────────
     /// Enable Time-Traveling Stream Rules (stream interrupt on rule violation).
     /// Default: false (opt-in, stable-first).
@@ -400,6 +407,48 @@ fn default_advisor_sync_backlog() -> String {
     "off".to_string()
 }
 
+/// oxibrain-backed workspace discovery (`workspace_search` tool).
+/// Everything defaults OFF — no spawn, no registration, no prompt fragment
+/// unless explicitly enabled (design D4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceSearchSettings {
+    /// Master switch. False by default.
+    #[serde(default = "default_false")]
+    pub enabled: bool,
+    /// Path to the oxibrain binary. Default: probe PATH, then ~/.oxi/bin.
+    #[serde(default)]
+    pub executable: Option<String>,
+    /// Brain space the workspace root registers into.
+    #[serde(default = "default_workspace_search_space")]
+    pub space: String,
+    /// Include globs for the document root (code-oriented defaults when unset).
+    #[serde(default)]
+    pub include: Option<Vec<String>>,
+    /// Exclude globs for the document root.
+    #[serde(default)]
+    pub exclude: Option<Vec<String>>,
+    /// Per-file size cap for indexing.
+    #[serde(default)]
+    pub max_file_bytes: Option<u64>,
+}
+
+impl Default for WorkspaceSearchSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            executable: None,
+            space: default_workspace_search_space(),
+            include: None,
+            exclude: None,
+            max_file_bytes: None,
+        }
+    }
+}
+
+fn default_workspace_search_space() -> String {
+    "dev".to_string()
+}
+
 fn default_theme() -> String {
     "default".to_string()
 }
@@ -466,6 +515,7 @@ impl Default for Settings {
             keybindings: HashMap::new(),
             edit_format: EditFormat::default(),
             memory_enabled: true,
+            workspace_search: WorkspaceSearchSettings::default(),
             todo_panel_enabled: true,
             todo_eager_mode: TodoEagerMode::Off,
             todo_reminders_enabled: true,
@@ -1311,6 +1361,34 @@ mod tests {
         assert!(Settings::default().inline_images, "previews on by default");
         let s: Settings = toml::from_str("inline_images = false").unwrap();
         assert!(!s.inline_images, "settings file can disable previews");
+    }
+
+    /// `workspace_search` defaults OFF — no spawn, no registration, no
+    /// prompt fragment unless explicitly enabled (design D4).
+    #[test]
+    fn workspace_search_defaults_to_disabled() {
+        let s = Settings::default();
+        assert!(!s.workspace_search.enabled);
+        assert_eq!(s.workspace_search.space, "dev");
+        assert!(s.workspace_search.executable.is_none());
+    }
+
+    /// `[workspace_search]` section parses from TOML with the serde
+    /// contract pin (enabled flag + executable override).
+    #[test]
+    fn workspace_search_parses_toml_section() {
+        let raw = r#"
+[workspace_search]
+enabled = true
+space = "dev"
+executable = "/opt/oxibrain/bin/oxibrain"
+"#;
+        let s: Settings = toml::from_str(raw).unwrap();
+        assert!(s.workspace_search.enabled);
+        assert_eq!(
+            s.workspace_search.executable.as_deref(),
+            Some("/opt/oxibrain/bin/oxibrain")
+        );
     }
 
     use super::*;
