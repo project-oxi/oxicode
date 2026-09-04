@@ -460,6 +460,15 @@ impl App {
             .map_err(|e| Error::msg(format!("agent build failed: {e}")))?;
         let agent = Arc::new(agent);
 
+        // Bridge the engine's shared registry (builtins + coding-omp-v1 pack
+        // tools + host-optional tools such as workspace_search) into this
+        // agent's registry. Since the behavior-pack cutover (807a4b55),
+        // bootstrap registers everything on `oxicode.tools()` only; without
+        // this copy, session agents see nothing but the host extras below.
+        // Pre-807a4b55 semantics restored: `register_builtin_tools` used to
+        // target the live agent registry directly.
+        bridge_engine_tools(oxicode.tools(), agent.tools());
+
         let ask_tool = oxicode_agent::tools::ask::AskTool::new(bridge.clone());
         agent.tools().register_arc(std::sync::Arc::new(ask_tool));
         // Open the local issue store rooted at the project (`.oxicode/issues/`).
@@ -742,6 +751,29 @@ pub(crate) fn acquire_ownership_guard(
     }
 }
 
+/// Copy every tool from the engine's shared registry into an agent's
+/// registry, plus the MCP manager handle (`register_arc` copies only the
+/// `Arc<dyn AgentTool>`; the manager lives in a separate field).
+///
+/// Since the behavior-pack cutover, bootstrap registers builtins, the
+/// `coding-omp-v1` pack tools, and host-optional tools (workspace_search,
+/// native-browser, WASM) on `oxicode.tools()` only. Without this bridge,
+/// session agents run with just the host extras (ask/issue) — the
+/// pre-807a4b55 regression this restores.
+pub(crate) fn bridge_engine_tools(
+    engine: Arc<oxicode_agent::ToolRegistry>,
+    agent: Arc<oxicode_agent::ToolRegistry>,
+) {
+    for name in engine.names() {
+        if let Some(tool) = engine.get(&name) {
+            agent.register_arc(tool);
+        }
+    }
+    if let Some(mgr) = engine.mcp_manager() {
+        agent.set_mcp_manager(mgr);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! P0 regression: `App` must hold exactly one liveness flock under its
@@ -807,6 +839,25 @@ mod tests {
             acquire_ownership_guard(Some(&store), "").is_none(),
             "empty ownership id must never acquire a lock (#13 guard)"
         );
+    }
+
+    #[test]
+    fn bridge_engine_tools_copies_tools_and_mcp_manager() {
+        // Regression for the pre-existing 807a4b55 propagation gap: the
+        // engine registry carries every coding tool while session agents
+        // start empty — the bridge must copy tools AND the MCP manager
+        // handle, or TUI/print agents run with nothing but ask/issue.
+        let engine = Arc::new(oxicode_agent::ToolRegistry::new());
+        engine.register_arc(Arc::new(oxicode_agent::GrepTool::new()));
+        let agent = Arc::new(oxicode_agent::ToolRegistry::new());
+
+        assert!(agent.get("grep").is_none(), "precondition: agent empty");
+        bridge_engine_tools(engine, agent.clone());
+
+        assert!(agent.get("grep").is_some(), "coding tools must bridge");
+        // Manager handle propagates (None → None here, but the call path
+        // must not panic and must not clobber an existing manager).
+        assert!(agent.mcp_manager().is_none());
     }
 }
 pub mod symbols;
