@@ -5550,6 +5550,8 @@ dependencies = [
  "dirs",
  "futures",
  "glob",
+ "globset",
+ "ignore",
  "libc",
  "oxibrowser",
  "oxibrowser-core",

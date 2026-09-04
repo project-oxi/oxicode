@@ -5,6 +5,22 @@ All notable changes to the oxicode project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `grep.search.v2` — `grep` now runs on a streaming, ignore-aware,
+  cancellable ExactSearchEngine (replaces `grep.search.v1`;
+  gitignore/.ignore/global/exclude respected, built-in artifact exclusions
+  kept, real glob `include`, cancellation returns partial results with a
+  `cancelled` marker). The legacy walker remains reachable via
+  `ToolRegistry::with_builtins_cwd` until 0.83.
+
+### Changed
+
+- Behavior change: files matched by repository ignore files no longer appear
+  in `grep` results; pass an explicit `path` to search ignored trees.
+
 ## [0.81.0] — 2026-09-01
 
 ### Added

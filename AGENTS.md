@@ -492,6 +492,17 @@ CI gates (`ci.yml`) + tests (`test.yml`) + PR gate + crates.io publish
 
 ## Pitfalls
 
+- **grep v2 semantics (`grep.search.v2`).** The pack-installed `grep` runs on
+  ExactSearchEngine: repository ignore files are honored (`.gitignore`,
+  `.ignore`, global/exclude), hidden entries are skipped, built-in artifact
+  dirs (`node_modules`, `target`, `dist`, `build`, `__pycache__`, `.venv`,
+  `venv`) are excluded, symlinks are not followed, and cancellation returns
+  partial results with a `cancelled` marker. Files matched by ignore files
+  no longer appear in results — pass an explicit `path` to search ignored
+  trees. The legacy walker survives only via
+  `ToolRegistry::with_builtins_cwd` until 0.83 (migration window);
+  `grep.search.v2` replaces `grep.search.v1` with ledger fixture
+  `behavior::grep_search_v2_contract`.
 - **Durable memory = oxibrain daemon, nothing else.** The only memory
   authority is the local oxibrain daemon over its unix socket
   (`~/.oxi/brain/oxibrain.sock`, override `OXIBRAIN_SOCKET`; resolver:

@@ -907,6 +907,8 @@ pub mod edit;
 pub mod edit_diff;
 /// Eval tool — persistent-kernel code execution (scaffold).
 pub mod eval_tool;
+/// ExactSearchEngine — private streaming search backend behind `GrepTool` v2.
+mod exact_search;
 /// Serialised file-mutation queue.
 pub mod file_mutation_queue;
 /// File-fsystem find tool.
@@ -1155,7 +1157,8 @@ impl ToolRegistry {
             Box::new(AstGrepTool::with_cwd(cwd.clone())),
             Box::new(BashTool::with_cwd(cwd.clone())),
             Box::new(EditTool::with_cwd(cwd.clone())),
-            Box::new(GrepTool::with_cwd(cwd.clone())),
+            // legacy walker until 0.83 (migration window); the pack installs grep.search.v2
+            Box::new(GrepTool::legacy_with_cwd(cwd.clone())),
             Box::new(FindTool::with_cwd(cwd.clone())),
             Box::new(LsTool::with_cwd(cwd.clone())),
             Box::new(web_search::WebSearchTool::new(
