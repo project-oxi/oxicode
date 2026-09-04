@@ -225,13 +225,17 @@ pub async fn build_app(args: &CliArgs) -> Result<crate::App> {
     }
 
     // Optional oxibrain-backed workspace discovery (design D3/D4): registered
-    // only when the user enabled it; zero cost otherwise.
+    // only when the user enabled it; zero cost otherwise. The registration
+    // marker feeds `workspace_search_guidance`, so every prompt path (initial
+    // + hot-apply rebuilds) gates the routing fragment on the same condition
+    // that registered the tool — never on the settings flag alone.
     if let Some(backend) =
         crate::foundation::brain_workspace::create_workspace_search_backend(&settings, &cwd)
     {
         tools.register_arc(std::sync::Arc::new(
             oxicode_agent::tools::WorkspaceSearchTool::new(backend),
         ));
+        crate::foundation::brain_workspace::mark_workspace_search_registered();
         tracing::info!("workspace_search registered (oxibrain document plane)");
     }
 

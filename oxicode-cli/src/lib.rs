@@ -237,6 +237,7 @@ fn build_system_prompt(
     thinking_level: crate::store::settings::ThinkingLevel,
     skill_contents: &[String],
     persona_body: Option<&str>,
+    workspace_search_block: Option<String>,
 ) -> String {
     let skills: Vec<prompt::system_prompt::Skill> = skill_contents
         .iter()
@@ -254,6 +255,9 @@ fn build_system_prompt(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default(),
         persona_prompt: persona_body.map(|s| s.to_string()),
+        // Routing fragment appended after the prompt body, same semantics
+        // as the runtime builder's `append_system_prompt`.
+        append_system_prompt: workspace_search_block,
         ..Default::default()
     };
 
@@ -322,7 +326,12 @@ impl App {
         });
 
         let body_str = persona.as_ref().map(|p| p.system_prompt.clone());
-        let system_prompt = build_system_prompt(settings.thinking_level, &[], body_str.as_deref());
+        // `None`: the App-level prompt does not render the workspace_search
+        // routing fragment — the App agent's tool set is assembled by the
+        // host, and the fragment must never name a tool this agent cannot
+        // call. Hot-apply rebuilds gate the fragment via the shared helper.
+        let system_prompt =
+            build_system_prompt(settings.thinking_level, &[], body_str.as_deref(), None);
         // coding-omp-v1 prompt layers prepend to the composed system prompt.
         let system_prompt = behavior
             .as_ref()
@@ -611,8 +620,17 @@ impl App {
         // on `self.persona_body` so this sync rebuild can include it
         // without re-awaiting the async PersonaProvider port.
         let persona = self.persona_body.read().clone();
-        let prompt =
-            build_system_prompt(self.settings.thinking_level, &contents, persona.as_deref());
+        // Routing fragment from the shared helper — the same gate the
+        // session-construction path uses (settings flag + boot-time
+        // registration), so a skill toggle can't drop it silently.
+        let workspace_search_block =
+            crate::app::agent_session_runtime::workspace_search_guidance(&self.settings);
+        let prompt = build_system_prompt(
+            self.settings.thinking_level,
+            &contents,
+            persona.as_deref(),
+            workspace_search_block,
+        );
         self.agent.set_system_prompt(prompt);
     }
 

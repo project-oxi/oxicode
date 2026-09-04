@@ -329,20 +329,11 @@ pub async fn create_agent_session_from_services(
     // Resolve thinking level
     let thinking_level = options.thinking_level.unwrap_or(settings.thinking_level);
 
-    // Optional workspace_search routing guidance (design D3/D4): present
-    // only when the user enabled the tool; absent otherwise.
-    let workspace_search_block = if settings.workspace_search.enabled {
-        Some(
-            "For a workspace-grounded question with unknown wording or location, \
-             use one focused workspace_search query. Verify its source passages \
-             with read or grep. Use grep for exact identifiers, paths, literals, \
-             regular expressions, and exhaustive occurrence searches. Do not use \
-             workspace_search to create, update, or delete an index."
-                .to_string(),
-        )
-    } else {
-        None
-    };
+    // Optional workspace_search routing guidance (design D3/D4): rendered
+    // from the shared helper so the initial prompt and every hot-apply
+    // rebuild gate the fragment identically — present only when the user
+    // enabled the tool AND it was actually registered at boot.
+    let workspace_search_block = workspace_search_guidance(settings);
 
     // Get provider and model
     if model_id.is_empty() {
@@ -628,6 +619,40 @@ pub async fn create_agent_session_from_services(
         session,
         model_fallback_message: None,
     })
+}
+
+/// Routing guidance fragment for the optional `workspace_search` tool
+/// (design D3/D4) — the **single source of truth** for both the fragment
+/// text and its gating.
+///
+/// Consumed by the initial session-construction path
+/// ([`create_agent_session_from_services`]) and by both hot-apply rebuild
+/// paths ([`crate::app::agent_session::AgentSession::rebuild_system_prompt`]
+/// and `crate::App::rebuild_system_prompt`), so `/reload` and `/settings`
+/// rebuilds can no longer drop the fragment.
+///
+/// The fragment is rendered only when the tool was actually registered:
+/// bootstrap constructs the oxibrain backend only when
+/// `[workspace_search].enabled` is set AND construction succeeds
+/// (resolvable brain dir, `PathGuard` validation), so the boot-time
+/// registration marker — not the settings flag alone — is what keeps the
+/// prompt from naming a tool that is absent. The settings flag stays in
+/// the gate as the runtime kill switch: disabling it drops the fragment on
+/// the next reload even though the tool remains registered.
+pub(crate) fn workspace_search_guidance(settings: &Settings) -> Option<String> {
+    if !(settings.workspace_search.enabled
+        && crate::foundation::brain_workspace::workspace_search_registered())
+    {
+        return None;
+    }
+    Some(
+        "For a workspace-grounded question with unknown wording or location, \
+         use one focused workspace_search query. Verify its source passages \
+         with read or grep. Use grep for exact identifiers, paths, literals, \
+         regular expressions, and exhaustive occurrence searches. Do not use \
+         workspace_search to create, update, or delete an index."
+            .to_string(),
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1023,16 +1048,6 @@ fn parse_model_id(model_id: &str) -> (String, String) {
     }
 }
 
-/// Build the system prompt based on thinking level.
-///
-/// `pub(crate)` so [`crate::app::agent_session::AgentSession::rebuild_system_prompt`]
-/// can call it for live hot-apply from `/reload` and `/settings`.
-///
-/// Delegates to [`crate::prompt::system_prompt::build_system_prompt`].
-pub(crate) fn build_system_prompt(thinking_level: ThinkingLevel) -> String {
-    build_system_prompt_with_memory(thinking_level, None, None, None, None)
-}
-
 /// Resolve the `default` persona from a [`oxicode_sdk::PersonaProvider`].
 ///
 /// Returns `None` when the provider has no `default.md`, when the file
@@ -1235,13 +1250,13 @@ mod tests {
 
     #[test]
     fn test_build_system_prompt() {
-        let prompt = build_system_prompt(ThinkingLevel::Off);
+        let prompt = build_system_prompt_with_memory(ThinkingLevel::Off, None, None, None, None);
         assert!(prompt.contains("concise"));
 
-        let prompt = build_system_prompt(ThinkingLevel::Medium);
+        let prompt = build_system_prompt_with_memory(ThinkingLevel::Medium, None, None, None, None);
         assert!(prompt.contains("coding"));
 
-        let prompt = build_system_prompt(ThinkingLevel::High);
+        let prompt = build_system_prompt_with_memory(ThinkingLevel::High, None, None, None, None);
         assert!(prompt.contains("comprehensive"));
     }
 

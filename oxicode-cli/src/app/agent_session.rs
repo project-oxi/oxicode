@@ -995,6 +995,12 @@ impl AgentSession {
         let fresh = crate::store::settings::Settings::load().unwrap_or_default();
         let thinking = fresh.thinking_level;
         let auto_compaction = fresh.auto_compaction;
+        // Hot-apply rebuilds must render the same prompt the initial path
+        // did: the workspace_search routing fragment comes from the shared
+        // helper (gated on settings + boot-time registration), not from a
+        // rebuild-specific builder that would silently drop it.
+        let workspace_search_block =
+            crate::app::agent_session_runtime::workspace_search_guidance(&fresh);
         *self.settings.write() = fresh;
 
         // Sync auto-compaction to runtime state so the overlay's
@@ -1009,8 +1015,13 @@ impl AgentSession {
             oxicode_sdk::CompactionStrategy::Disabled
         };
         self.agent.set_compaction_strategy(strategy);
-
-        let prompt = crate::app::agent_session_runtime::build_system_prompt(thinking);
+        let prompt = crate::app::agent_session_runtime::build_system_prompt_with_memory(
+            thinking,
+            None,
+            None,
+            workspace_search_block,
+            None,
+        );
         self.agent.set_system_prompt(prompt);
     }
 

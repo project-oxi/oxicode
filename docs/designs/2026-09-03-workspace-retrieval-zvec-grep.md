@@ -446,9 +446,9 @@ trees; the ordering (v2 < legacy) held in every measured run.
 | `exact_search` unit tests | ignore rules, globs, regex/literal modes, binary detection, line/context accounting, long-line truncation, cancellation, symlink policy |
 | `GrepTool` integration tests | schema compatibility, PathGuard boundary, output formatting, internal URLs, v1/v2 migration fixtures |
 | `WorkspaceSearchTool` unit tests | schema caps, envelope rendering, unavailable/missing-backend errors, backend-trait boundary (fake backend) |
-| backend integration tests | in-process `run_session` duplex (temp `--dir`): success, empty index, reconcile-freshness reporting, child-spawn failure |
-| optional live test | pinned oxibrain release binary + local model, `#[ignore]`-gated, excluded from normal offline CI; validates real registration + hybrid retrieval |
-| behavior fixtures | `grep.search.v2` output and routing tests; prompt fragment appears only with registered workspace search |
+| backend integration tests | **deferred** — the in-process `run_session` duplex (temp `--dir`) variants (success, empty index, reconcile-freshness reporting, child-spawn failure) did not ship; backend coverage is carried by the env-gated live test below until then (follow-up) |
+| optional live test | **shipped** — `oxicode-cli/tests/workspace_search_live.rs`: pinned oxibrain binary + local model, `#[ignore]`-gated on `OXICODE_BRAIN_WS_BIN`, excluded from normal offline CI; validates real registration + hybrid retrieval |
+| behavior fixtures | **partial** — `grep.search.v2` output fixtures shipped (`oxicode-sdk/tests/behavior/grep_fixture.rs` + `exact_search` unit tests); routing tests and the "prompt fragment appears only with registered workspace search" fixture are **deferred** (follow-up) |
 | benchmark harness | paired task records including tool trace, token counts, latency, index preparation duration/size, and environment manifest |
 
 ## Risks and mitigations

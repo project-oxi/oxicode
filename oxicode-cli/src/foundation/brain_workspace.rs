@@ -17,6 +17,31 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set iff `create_workspace_search_backend` constructed a backend for this
+/// process and bootstrap registered the `workspace_search` tool on the live
+/// tool registry (see `bootstrap::build_app`). This is a boot-time fact:
+/// construction happens once per process, so prompt gating can rely on it
+/// for the process lifetime. Defaults to `false`, which is the honest
+/// answer for callers that never run bootstrap (tests, embedding hosts) —
+/// the routing fragment must not name a tool that was never registered.
+static WORKSPACE_SEARCH_REGISTERED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the `workspace_search` tool was registered for this process.
+/// The single gate (together with the settings flag) behind
+/// `workspace_search_guidance`, so the initial session prompt and every
+/// hot-apply rebuild derive the fragment from the same condition that
+/// registered the tool.
+pub(crate) fn workspace_search_registered() -> bool {
+    WORKSPACE_SEARCH_REGISTERED.load(Ordering::Relaxed)
+}
+
+/// Record that the `workspace_search` tool was registered. Called by
+/// bootstrap immediately after registering the tool.
+pub(crate) fn mark_workspace_search_registered() {
+    WORKSPACE_SEARCH_REGISTERED.store(true, Ordering::Relaxed);
+}
 
 /// Code-oriented include globs used when settings leave `include` unset.
 const DEFAULT_INCLUDE: &[&str] = &[

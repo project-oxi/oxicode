@@ -186,14 +186,13 @@ pub(crate) fn search(
                     return ignore::WalkState::Continue;
                 }
             }
-            let block = search_file(path, &root, &re, req_ctx, req_max, &budget, &done);
+            let block = search_file(path, &root, &re, req_ctx, req_max, &budget, &done, &cancel);
             if !block.lines.is_empty() {
                 blocks.lock().push(block);
             }
             ignore::WalkState::Continue
         })
     });
-
     let mut blocks: Vec<FileBlock> = {
         let mut guard = blocks.lock();
         std::mem::take(&mut *guard)
@@ -256,6 +255,7 @@ struct FileBlock {
 /// `max_results` rows in total and no whole-file buffer is ever built.
 /// A NUL byte past the sniff discards the file's accumulated output
 /// wholesale (v1 parity); unreadable files are skipped silently.
+#[allow(clippy::too_many_arguments)] // scan controls (budget/done/cancel) are distinct knobs, as in grep.rs/subagent.rs
 fn search_file(
     path: &Path,
     root: &Path,
@@ -264,6 +264,7 @@ fn search_file(
     max_results: usize,
     budget: &AtomicUsize,
     done: &AtomicBool,
+    cancel: &AtomicBool,
 ) -> FileBlock {
     let empty = |rel: String| FileBlock {
         rel,
@@ -280,6 +281,9 @@ fn search_file(
     let mut ring: std::collections::VecDeque<String> = std::collections::VecDeque::new();
     let mut pending_after = 0usize;
     for (idx, line) in reader.split(b'\n').enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            break; // user cancel: stop scanning this file, return partial
+        }
         let Ok(bytes) = line else {
             break; // mid-file I/O error → keep what we have
         };
@@ -609,6 +613,31 @@ mod tests {
         assert!(out.cancelled);
     }
 
+    #[test]
+    fn in_file_cancel_stops_line_scan() {
+        let (_d, root) = ws();
+        // Many matching lines: without the per-line cancel check the scan
+        // would run to EOF and record matches.
+        let big: String = (0..50_000)
+            .map(|i| format!("fn alpha_{i}() {{}}\n"))
+            .collect();
+        std::fs::write(root.join("src/lib.rs"), big).unwrap();
+        let cancel = AtomicBool::new(true); // set before the scan
+        let done = AtomicBool::new(false);
+        let budget = AtomicUsize::new(0);
+        let re = regex::Regex::new("alpha").unwrap();
+        let block = search_file(
+            &root.join("src/lib.rs"),
+            &root,
+            &re,
+            0,
+            100,
+            &budget,
+            &done,
+            &cancel,
+        );
+        assert!(block.lines.is_empty(), "cancel must stop the line scan");
+    }
     #[test]
     fn explicit_artifact_dir_root_is_searched() {
         let (_d, root) = ws();
