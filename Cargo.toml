@@ -27,9 +27,9 @@ linkify = "0.10"
 regex = "1"
 syntect = { version = "5.3", default-features = false, features = ["default-fancy", "regex-onig"] }
 fuzzy-matcher = "0.3"
-itertools = "0.14"
+itertools = "0.15"
 pretty_assertions = "1"
-rand = "0.9"
+rand = "0.10"
 ratatui = { version = "0.30", features = ["crossterm"] }
 ratatui-core = "0.1"
 textwrap = "0.16"

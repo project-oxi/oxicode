@@ -38,7 +38,7 @@ regex = "1"
 oxicode-snapcompact = { version = "0.81.0", path = "../oxicode-snapcompact" }
 
 # File-based port impls (fs/ sub-module). Always available in default build.
-toml = "0.9"
+toml = "1.1"
 walkdir = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 flate2 = "1"
