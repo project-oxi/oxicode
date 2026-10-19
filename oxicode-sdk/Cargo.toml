@@ -29,7 +29,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 fastrand = "2"
 tracing = "0.1"
 serde_yaml = "0.9"
-dirs = "6"
+dirs = "7"
 blake3 = "1"
 chrono = { version = "0.4", features = ["serde"] }
 glob = "0.3"
@@ -38,7 +38,7 @@ regex = "1"
 oxicode-snapcompact = { version = "0.81.0", path = "../oxicode-snapcompact" }
 
 # File-based port impls (fs/ sub-module). Always available in default build.
-toml = "0.9"
+toml = "1.1"
 walkdir = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 flate2 = "1"
