@@ -13,7 +13,7 @@ exclude = ["target/"]
 
 [dependencies]
 xxhash-rust = { version = "0.8", features = ["xxh32"] }
-lru = "0.18"
+lru = "0.19"
 thiserror = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 parking_lot = "0.12"
