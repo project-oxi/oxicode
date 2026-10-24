@@ -45,7 +45,10 @@ use crate::state::TokenSource;
 use crate::tools::todo::{MidRunNudgeState, StopReminderState, build_stop_reminder};
 use crate::{state::SharedState, tools::ToolContext, tools::ToolRegistry};
 use anyhow::{Error, Result};
-pub use config::{AfterToolCallHook, AgentLoopConfig, BeforeToolCallHook, ToolExecutionMode};
+pub use config::{
+    AfterToolCallHook, AgentLoopConfig, BeforeToolCallHook, FinishTurnAction, FinishTurnContext,
+    FinishTurnHook, QueueMode, ToolExecutionMode,
+};
 use oxicode_ai::{
     CompactionManager as OxCompactionManager, CompactionStrategy, ContentBlock, LlmCompactor,
     Message, Provider, StopReason, TextContent, UserMessage,
@@ -58,7 +61,8 @@ use std::time::Instant;
 use self::helpers::{sanitize_orphaned_tool_results, should_stop_after_turn};
 use self::queues::{
     clear_all_queues, clear_follow_up_queue, clear_steering_queue, drain_follow_up_queue,
-    drain_steering_queue, try_push_follow_up, try_push_steering,
+    drain_steering_queue, peek_follow_up_batch, peek_steering_batch, try_push_follow_up,
+    try_push_steering,
 };
 use self::retry::{
     auto_retry_attempt_method, cancel_auto_retry, handle_retryable_error, is_retryable_error,
@@ -262,6 +266,16 @@ impl AgentLoop {
     /// Removes all pending messages from both the steering and follow-up queues.
     pub fn clear_all_queues(&self) {
         clear_all_queues(self);
+    }
+
+    /// Preview the next delivery batch for both queues without consuming
+    /// anything (upstream pi: `Agent.peekQueuedMessages`).
+    ///
+    /// Returns `(steering_batch, follow_up_batch)`, sized according to the
+    /// configured [`QueueMode`]: `all` returns everything queued,
+    /// `one_at_a_time` only the single next message.
+    pub fn peek_queued_messages(&self) -> (Vec<Message>, Vec<Message>) {
+        (peek_steering_batch(self), peek_follow_up_batch(self))
     }
 
     fn drain_steering_queue(&self) -> Vec<Message> {
@@ -775,6 +789,10 @@ impl AgentLoop {
         let mut first_turn = true;
 
         let mut pending_messages: Vec<Message> = self.drain_steering_queue();
+        // Armed by the finish_turn hook's `Continue` decision: guarantees one
+        // more provider request even with no tool calls and empty queues.
+        // Consumed at the top of the next turn.
+        let mut force_continue = false;
 
         // Stop-time incomplete-todo reminder state (per-run). Bounded by
         // signature dedup + MAX_TODO_STOP_REMINDERS so nudging the agent to
@@ -796,7 +814,11 @@ impl AgentLoop {
             );
             let mut has_more_tool_calls = true;
 
-            while has_more_tool_calls || !pending_messages.is_empty() {
+            while has_more_tool_calls || !pending_messages.is_empty() || force_continue {
+                // A `Continue` decision guarantees exactly one extra request;
+                // the hook can re-arm it after that turn (upstream: returning
+                // continue unconditionally creates an endless loop).
+                force_continue = false;
                 let is_first_turn = first_turn;
                 if !first_turn {
                     turn_number += 1;
@@ -1193,6 +1215,28 @@ impl AgentLoop {
                     }
                 }
 
+                // finishTurn hook (upstream pi 0.87.0): runs after the
+                // assistant message and tool results are finalized, before
+                // turn_end. Error/aborted turns exit through
+                // handle_streaming_error and never reach this point, so they
+                // remain hard exits regardless of any decision (upstream
+                // semantics).
+                let mut finish_end = false;
+                if let Some(hook) = &self.config.finish_turn {
+                    let ctx = FinishTurnContext {
+                        assistant_message: Message::Assistant(assistant_message.clone()),
+                        tool_results: tool_results.clone(),
+                    };
+                    match hook(ctx).await {
+                        Ok(Some(FinishTurnAction::End)) => finish_end = true,
+                        Ok(Some(FinishTurnAction::Continue)) => force_continue = true,
+                        Ok(None) => {}
+                        Err(error) => {
+                            tracing::warn!(%error, "finish_turn hook failed; ignoring");
+                        }
+                    }
+                }
+
                 emit(AgentEvent::TurnEnd {
                     turn_number,
                     assistant_message: Message::Assistant(assistant_message.clone()),
@@ -1203,6 +1247,14 @@ impl AgentLoop {
                     assistant_message: Message::Assistant(assistant_message.clone()),
                     tool_results: tool_results.clone(),
                 });
+
+                // `End` stops immediately after turn_end, before polling the
+                // steering/follow-up queues (end-of-run work belongs to
+                // agent_end consumers).
+                if finish_end {
+                    tracing::info!("[AGENT-LOOP] finish_turn requested end, ending run");
+                    return Ok((messages, events));
+                }
 
                 if should_stop_after_turn(&self.external_stop) {
                     tracing::info!("[AGENT-LOOP] external_stop, ending loop");

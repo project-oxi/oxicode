@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Agent-loop alignment with upstream pi (0.87.0–1.4.0):
+  - `finish_turn` hook on `AgentLoopConfig` (`FinishTurnAction::End`/`Continue`,
+    upstream `finishTurn`) — runs after a turn's assistant message and tool
+    results are finalized, before `turn_end`; `End` stops the run without
+    polling queues, `Continue` guarantees one more provider request. Decisions
+    on error/aborted turns are ignored (hard exits), matching upstream.
+  - `steering_mode` / `follow_up_mode` (`QueueMode::All` | `OneAtATime`,
+    upstream `steeringMode`/`followUpMode`) — per-queue delivery control,
+    threaded from `AgentConfig`. Oxicode keeps `All` as the default (upstream
+    defaults to one-at-a-time). Plus `AgentLoop::peek_queued_messages()`
+    (upstream `Agent.peekQueuedMessages`).
+  - `Agent::is_streaming()` / `Agent::wait_for_idle()` (upstream
+    `isStreaming` / `waitForIdle`) — panic-safe via the run guard.
+  - Tool arguments are schema-validated against the tool's
+    `parameters_schema` before the `before_tool_call` hook and execution
+    (upstream `validateToolArguments`). Failures return an error tool result
+    the model can retry against. Disable with
+    `AgentLoopConfig::validate_tool_arguments = false`.
 - `grep.search.v2` — `grep` now runs on a streaming, ignore-aware,
   cancellable ExactSearchEngine (replaces `grep.search.v1`;
   gitignore/.ignore/global/exclude respected, built-in artifact exclusions

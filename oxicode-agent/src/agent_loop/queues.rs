@@ -25,16 +25,53 @@ pub(crate) fn clear_all_queues(loop_ref: &super::AgentLoop) {
     clear_follow_up_queue(loop_ref);
 }
 
-/// Drain and return all messages from the steering queue.
+/// Drain and return the next delivery batch from the steering queue,
+/// honoring the configured [`QueueMode`].
 pub(crate) fn drain_steering_queue(loop_ref: &super::AgentLoop) -> Vec<oxicode_ai::Message> {
     let mut queue = loop_ref.steering_queue.write();
-    queue.drain(..).collect()
+    match loop_ref.config.steering_mode {
+        super::config::QueueMode::OneAtATime => {
+            let take = queue.len().min(1);
+            queue.drain(..take).collect()
+        }
+        super::config::QueueMode::All => queue.drain(..).collect(),
+    }
 }
 
-/// Drain and return all messages from the follow-up queue.
+/// Drain and return the next delivery batch from the follow-up queue,
+/// honoring the configured [`QueueMode`].
 pub(crate) fn drain_follow_up_queue(loop_ref: &super::AgentLoop) -> Vec<oxicode_ai::Message> {
     let mut queue = loop_ref.follow_up_queue.write();
-    queue.drain(..).collect()
+    match loop_ref.config.follow_up_mode {
+        super::config::QueueMode::OneAtATime => {
+            let take = queue.len().min(1);
+            queue.drain(..take).collect()
+        }
+        super::config::QueueMode::All => queue.drain(..).collect(),
+    }
+}
+
+/// Return the batch [`QueueMode::All`] would deliver from `queue`.
+fn batch_for_mode(
+    queue: &[oxicode_ai::Message],
+    mode: super::config::QueueMode,
+) -> Vec<oxicode_ai::Message> {
+    match mode {
+        super::config::QueueMode::All => queue.to_vec(),
+        super::config::QueueMode::OneAtATime => queue.first().into_iter().cloned().collect(),
+    }
+}
+
+/// Preview the next steering delivery batch without consuming it.
+pub(crate) fn peek_steering_batch(loop_ref: &super::AgentLoop) -> Vec<oxicode_ai::Message> {
+    let queue = loop_ref.steering_queue.read();
+    batch_for_mode(&queue, loop_ref.config.steering_mode)
+}
+
+/// Preview the next follow-up delivery batch without consuming it.
+pub(crate) fn peek_follow_up_batch(loop_ref: &super::AgentLoop) -> Vec<oxicode_ai::Message> {
+    let queue = loop_ref.follow_up_queue.read();
+    batch_for_mode(&queue, loop_ref.config.follow_up_mode)
 }
 
 /// Try to push a message onto the steering queue.

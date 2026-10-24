@@ -896,9 +896,34 @@ async fn prepare_tool_call(
         }
     };
 
+    // Validate arguments against the tool's JSON Schema before any hook or
+    // execution (upstream pi: validateToolArguments). A rejection here never
+    // reaches the tool's `execute`; the model sees the validation error and
+    // can retry with corrected arguments.
+    if loop_ref.config.validate_tool_arguments {
+        let schema_tool = oxicode_ai::Tool {
+            name: tool.name().to_string(),
+            description: tool.description().to_string(),
+            parameters: tool.parameters_schema(),
+        };
+        if let Err(error) = oxicode_ai::validate_args(&schema_tool, &tool_call.arguments) {
+            return PreparedToolCallOutcome {
+                _kind: PreparedToolCallKind::Immediate,
+                immediate_result: Some(AgentToolResult::error(format!(
+                    "Invalid arguments for tool '{}': {error}",
+                    tool_call.name
+                ))),
+                is_error: true,
+                tool: None,
+                tool_call: tool_call.clone(),
+                args: tool_call.arguments.clone(),
+            };
+        }
+    }
+
     let validated_args = tool_call.arguments.clone();
 
-    if let Some(ref hook) = loop_ref.before_tool_call
+    if let Some(hook) = &loop_ref.before_tool_call
         && let Some(blocked) = hook(&tool_call.name, &validated_args).await.ok().flatten()
     {
         return PreparedToolCallOutcome {

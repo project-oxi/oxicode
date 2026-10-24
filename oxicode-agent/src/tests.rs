@@ -2906,3 +2906,548 @@ fn context_window_syncs_from_resolved_model() {
         "switch_to_model must sync context_window from the given model"
     );
 }
+
+// ── Tool-argument schema validation (validate_tool_arguments) ────────────
+
+struct StrictTool {
+    executed: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[async_trait]
+impl crate::tools::AgentTool for StrictTool {
+    fn name(&self) -> &str {
+        "strict"
+    }
+    fn label(&self) -> &str {
+        "Strict"
+    }
+    fn description(&self) -> &str {
+        "Requires a msg string"
+    }
+    fn parameters_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {"msg": {"type": "string"}},
+            "required": ["msg"]
+        })
+    }
+    async fn execute(
+        &self,
+        _tool_call_id: &str,
+        _params: serde_json::Value,
+        _signal: Option<tokio::sync::oneshot::Receiver<()>>,
+        _ctx: &crate::tools::ToolContext,
+    ) -> Result<crate::tools::AgentToolResult, crate::tools::ToolError> {
+        self.executed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(crate::tools::AgentToolResult::success("ran"))
+    }
+}
+
+#[tokio::test]
+async fn invalid_tool_arguments_are_rejected_before_execution() {
+    use crate::agent_loop::{AgentLoop, AgentLoopConfig, ToolExecutionMode};
+    use crate::state::SharedState;
+    use crate::tools::ToolRegistry;
+    use oxicode_ai::CompactionStrategy;
+
+    let executed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Turn 1: tool call missing the required "msg". Turn 2: plain answer.
+    let provider = Arc::new(MultiTurnToolProvider::new(vec![
+        MultiTurnToolResponse {
+            text: None,
+            tool_calls: vec![oxicode_ai::ToolCall::new(
+                "call_1",
+                "strict",
+                serde_json::json!({}),
+            )],
+        },
+        MultiTurnToolResponse {
+            text: Some("done".to_string()),
+            tool_calls: vec![],
+        },
+    ]));
+
+    let config = AgentLoopConfig {
+        model_id: "anthropic/claude-sonnet-4-20250514".to_string(),
+        tool_execution: ToolExecutionMode::Sequential,
+        compaction_strategy: CompactionStrategy::Disabled,
+        ..Default::default()
+    };
+
+    let tools = Arc::new(ToolRegistry::new());
+    tools.register(StrictTool {
+        executed: Arc::clone(&executed),
+    });
+    let agent_loop = AgentLoop::new(provider, config, tools, SharedState::new());
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+    let result = agent_loop
+        .run("call the tool".to_string(), move |e| {
+            events_clone.lock().unwrap().push(e)
+        })
+        .await;
+    assert!(result.is_ok(), "agent loop run failed: {result:?}");
+
+    // The tool's execute must never have run.
+    assert!(
+        !executed.load(std::sync::atomic::Ordering::SeqCst),
+        "execute ran despite schema-invalid arguments"
+    );
+
+    // The model must have received a validation rejection as the tool result.
+    let events = events.lock().unwrap();
+    let rejections: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ToolExecutionEnd {
+                result, is_error, ..
+            } if *is_error => Some(result.content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        rejections
+            .iter()
+            .any(|c| c.contains("Invalid arguments for tool 'strict'")),
+        "expected a schema-validation rejection, got: {rejections:?}"
+    );
+}
+
+#[tokio::test]
+async fn valid_tool_arguments_still_execute() {
+    use crate::agent_loop::{AgentLoop, AgentLoopConfig, ToolExecutionMode};
+    use crate::state::SharedState;
+    use crate::tools::ToolRegistry;
+    use oxicode_ai::CompactionStrategy;
+
+    let executed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let provider = Arc::new(MultiTurnToolProvider::new(vec![
+        MultiTurnToolResponse {
+            text: None,
+            tool_calls: vec![oxicode_ai::ToolCall::new(
+                "call_1",
+                "strict",
+                serde_json::json!({"msg": "hi"}),
+            )],
+        },
+        MultiTurnToolResponse {
+            text: Some("done".to_string()),
+            tool_calls: vec![],
+        },
+    ]));
+
+    let config = AgentLoopConfig {
+        model_id: "anthropic/claude-sonnet-4-20250514".to_string(),
+        tool_execution: ToolExecutionMode::Sequential,
+        compaction_strategy: CompactionStrategy::Disabled,
+        ..Default::default()
+    };
+
+    let tools = Arc::new(ToolRegistry::new());
+    tools.register(StrictTool {
+        executed: Arc::clone(&executed),
+    });
+    let agent_loop = AgentLoop::new(provider, config, tools, SharedState::new());
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+    let result = agent_loop
+        .run("call the tool".to_string(), move |e| {
+            events_clone.lock().unwrap().push(e)
+        })
+        .await;
+    assert!(result.is_ok(), "agent loop run failed: {result:?}");
+
+    assert!(executed.load(std::sync::atomic::Ordering::SeqCst));
+    let events = events.lock().unwrap();
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            AgentEvent::ToolExecutionEnd {
+                is_error: false,
+                ..
+            }
+        )),
+        "expected a successful tool execution"
+    );
+}
+
+// ── Queue delivery modes (steeringMode / followUpMode) ───────────────────
+
+fn user_text(message: &oxicode_ai::Message) -> Option<String> {
+    match message {
+        oxicode_ai::Message::User(u) => u.content.as_str().map(str::to_string),
+        _ => None,
+    }
+}
+
+fn text_provider() -> Arc<MultiTurnToolProvider> {
+    Arc::new(MultiTurnToolProvider::new(vec![
+        MultiTurnToolResponse {
+            text: Some("one".to_string()),
+            tool_calls: vec![],
+        },
+        MultiTurnToolResponse {
+            text: Some("two".to_string()),
+            tool_calls: vec![],
+        },
+        MultiTurnToolResponse {
+            text: Some("three".to_string()),
+            tool_calls: vec![],
+        },
+    ]))
+}
+
+#[tokio::test]
+async fn steering_one_at_a_time_delivers_one_message_per_turn() {
+    use crate::agent_loop::{AgentLoop, AgentLoopConfig, QueueMode, ToolExecutionMode};
+    use crate::state::SharedState;
+    use crate::tools::ToolRegistry;
+    use oxicode_ai::CompactionStrategy;
+
+    let provider = text_provider();
+    let config = AgentLoopConfig {
+        model_id: "anthropic/claude-sonnet-4-20250514".to_string(),
+        tool_execution: ToolExecutionMode::Sequential,
+        compaction_strategy: CompactionStrategy::Disabled,
+        steering_mode: QueueMode::OneAtATime,
+        ..Default::default()
+    };
+    let agent_loop = AgentLoop::new(
+        provider,
+        config,
+        Arc::new(ToolRegistry::new()),
+        SharedState::new(),
+    );
+    agent_loop.steer(oxicode_ai::Message::User(oxicode_ai::UserMessage::new(
+        "steer-1",
+    )));
+    agent_loop.steer(oxicode_ai::Message::User(oxicode_ai::UserMessage::new(
+        "steer-2",
+    )));
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+    agent_loop
+        .run("start".to_string(), move |e| {
+            events_clone.lock().unwrap().push(e)
+        })
+        .await
+        .unwrap();
+
+    let events = events.lock().unwrap();
+    let turns = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::TurnStart { .. }))
+        .count();
+    let steered: Vec<String> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::SteeringMessage { message } => user_text(message),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(turns, 2, "each steering message must get its own turn");
+    assert_eq!(steered, vec!["steer-1".to_string(), "steer-2".to_string()]);
+}
+
+#[tokio::test]
+async fn steering_all_delivers_whole_batch_in_one_turn() {
+    use crate::agent_loop::{AgentLoop, AgentLoopConfig, ToolExecutionMode};
+    use crate::state::SharedState;
+    use crate::tools::ToolRegistry;
+    use oxicode_ai::CompactionStrategy;
+
+    let provider = text_provider();
+    let config = AgentLoopConfig {
+        model_id: "anthropic/claude-sonnet-4-20250514".to_string(),
+        tool_execution: ToolExecutionMode::Sequential,
+        compaction_strategy: CompactionStrategy::Disabled,
+        ..Default::default()
+    };
+    let agent_loop = AgentLoop::new(
+        provider,
+        config,
+        Arc::new(ToolRegistry::new()),
+        SharedState::new(),
+    );
+    agent_loop.steer(oxicode_ai::Message::User(oxicode_ai::UserMessage::new(
+        "steer-1",
+    )));
+    agent_loop.steer(oxicode_ai::Message::User(oxicode_ai::UserMessage::new(
+        "steer-2",
+    )));
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+    agent_loop
+        .run("start".to_string(), move |e| {
+            events_clone.lock().unwrap().push(e)
+        })
+        .await
+        .unwrap();
+
+    let events = events.lock().unwrap();
+    let turns = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::TurnStart { .. }))
+        .count();
+    let steered: Vec<String> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::SteeringMessage { message } => user_text(message),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(turns, 1, "drain-all must deliver the batch in one turn");
+    assert_eq!(steered, vec!["steer-1".to_string(), "steer-2".to_string()]);
+}
+
+#[tokio::test]
+async fn peek_queued_messages_previews_without_consuming() {
+    use crate::agent_loop::{AgentLoop, AgentLoopConfig, QueueMode, ToolExecutionMode};
+    use crate::state::SharedState;
+    use crate::tools::ToolRegistry;
+    use oxicode_ai::CompactionStrategy;
+
+    let config = AgentLoopConfig {
+        model_id: "anthropic/claude-sonnet-4-20250514".to_string(),
+        tool_execution: ToolExecutionMode::Sequential,
+        compaction_strategy: CompactionStrategy::Disabled,
+        steering_mode: QueueMode::OneAtATime,
+        ..Default::default()
+    };
+    let agent_loop = AgentLoop::new(
+        text_provider(),
+        config,
+        Arc::new(ToolRegistry::new()),
+        SharedState::new(),
+    );
+    agent_loop.steer(oxicode_ai::Message::User(oxicode_ai::UserMessage::new(
+        "s1",
+    )));
+    agent_loop.steer(oxicode_ai::Message::User(oxicode_ai::UserMessage::new(
+        "s2",
+    )));
+
+    let (batch, follow_up) = agent_loop.peek_queued_messages();
+    assert_eq!(user_text(batch.first().unwrap()).as_deref(), Some("s1"));
+    assert!(follow_up.is_empty());
+
+    // Peeking must not consume: the same preview comes back.
+    let (batch_again, _) = agent_loop.peek_queued_messages();
+    assert_eq!(
+        user_text(batch_again.first().unwrap()).as_deref(),
+        Some("s1")
+    );
+
+    // All-mode preview returns everything queued.
+    let config = AgentLoopConfig {
+        model_id: "anthropic/claude-sonnet-4-20250514".to_string(),
+        tool_execution: ToolExecutionMode::Sequential,
+        compaction_strategy: CompactionStrategy::Disabled,
+        ..Default::default()
+    };
+    let agent_loop = AgentLoop::new(
+        text_provider(),
+        config,
+        Arc::new(ToolRegistry::new()),
+        SharedState::new(),
+    );
+    agent_loop.steer(oxicode_ai::Message::User(oxicode_ai::UserMessage::new(
+        "s1",
+    )));
+    agent_loop.steer(oxicode_ai::Message::User(oxicode_ai::UserMessage::new(
+        "s2",
+    )));
+    let (batch, _) = agent_loop.peek_queued_messages();
+    assert_eq!(batch.len(), 2);
+}
+
+// ── Agent streaming state (isStreaming / waitForIdle) ────────────────────
+
+struct SleepyProvider {
+    ms: u64,
+}
+
+impl Provider for SleepyProvider {
+    fn stream<'a>(
+        &'a self,
+        _model: &'a oxicode_ai::Model,
+        _context: &'a Context,
+        _options: Option<oxicode_ai::StreamOptions>,
+    ) -> Pin<Box<dyn Future<Output = StreamResult> + Send + 'a>> {
+        Box::pin(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(self.ms)).await;
+            let mut assistant = oxicode_ai::AssistantMessage::new(
+                oxicode_ai::Api::AnthropicMessages,
+                "mock",
+                "mock-model",
+            );
+            assistant.content = vec![ContentBlock::Text(TextContent::new("done".to_string()))];
+            assistant.stop_reason = StopReason::Stop;
+            let events: Vec<ProviderEvent> = vec![ProviderEvent::Done {
+                reason: StopReason::Stop,
+                message: assistant,
+            }];
+            Ok(Box::pin(futures::stream::iter(events))
+                as Pin<Box<dyn Stream<Item = ProviderEvent> + Send>>)
+        })
+    }
+}
+
+#[tokio::test]
+async fn agent_is_streaming_and_wait_for_idle_track_runs() {
+    use crate::config::AgentConfig;
+    use crate::tools::ToolRegistry;
+
+    let agent = Arc::new(Agent::new(
+        Arc::new(SleepyProvider { ms: 200 }),
+        AgentConfig::new("anthropic/claude-sonnet-4-20250514"),
+        Arc::new(ToolRegistry::new()),
+    ));
+    assert!(!agent.is_streaming(), "idle agent must not be streaming");
+
+    let runner = Arc::clone(&agent);
+    let handle = tokio::spawn(async move { runner.run("hi".to_string()).await });
+
+    let mut saw_streaming = false;
+    for _ in 0..200 {
+        if agent.is_streaming() {
+            saw_streaming = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(saw_streaming, "run never reported streaming state");
+
+    agent.wait_for_idle().await;
+    assert!(
+        !agent.is_streaming(),
+        "wait_for_idle returned while streaming"
+    );
+
+    let (response, _) = handle.await.unwrap().unwrap();
+    assert_eq!(response.content, "done");
+}
+
+// ── finishTurn hook (upstream pi 0.87.0) ─────────────────────────────────
+
+#[tokio::test]
+async fn finish_turn_end_stops_run_after_single_turn() {
+    use crate::agent_loop::{AgentLoop, AgentLoopConfig, FinishTurnAction, ToolExecutionMode};
+    use crate::state::SharedState;
+    use crate::tools::ToolRegistry;
+    use oxicode_ai::CompactionStrategy;
+
+    // Repeats an echo tool call forever unless the loop ends early.
+    let provider = Arc::new(MultiTurnToolProvider::new(vec![MultiTurnToolResponse {
+        text: None,
+        tool_calls: vec![oxicode_ai::ToolCall::new(
+            "call_1",
+            "echo",
+            serde_json::json!({"message": "hi"}),
+        )],
+    }]));
+    let calls = Arc::clone(&provider.call_count);
+
+    let config = AgentLoopConfig {
+        model_id: "anthropic/claude-sonnet-4-20250514".to_string(),
+        tool_execution: ToolExecutionMode::Sequential,
+        compaction_strategy: CompactionStrategy::Disabled,
+        finish_turn: Some(Arc::new(|_ctx| {
+            Box::pin(async { Ok(Some(FinishTurnAction::End)) })
+        })),
+        ..Default::default()
+    };
+
+    let tools = Arc::new(ToolRegistry::new());
+    tools.register(EchoTool);
+    let agent_loop = AgentLoop::new(provider, config, tools, SharedState::new());
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+    agent_loop
+        .run("go".to_string(), move |e| {
+            events_clone.lock().unwrap().push(e)
+        })
+        .await
+        .unwrap();
+
+    let events = events.lock().unwrap();
+    let turn_ends = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::TurnEnd { .. }))
+        .count();
+
+    assert_eq!(
+        *calls.lock().unwrap(),
+        1,
+        "End must stop after the first turn"
+    );
+    assert_eq!(turn_ends, 1, "run must emit exactly one turn_end");
+}
+
+#[tokio::test]
+async fn finish_turn_continue_forces_extra_provider_request() {
+    use crate::agent_loop::{AgentLoop, AgentLoopConfig, FinishTurnAction, ToolExecutionMode};
+    use crate::state::SharedState;
+    use crate::tools::ToolRegistry;
+    use oxicode_ai::CompactionStrategy;
+
+    // Single text response; the provider repeats it on every call.
+    let provider = Arc::new(MultiTurnToolProvider::new(vec![MultiTurnToolResponse {
+        text: Some("only answer".to_string()),
+        tool_calls: vec![],
+    }]));
+    let calls = Arc::clone(&provider.call_count);
+    let hook_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let hook_counter = Arc::clone(&hook_calls);
+
+    let config = AgentLoopConfig {
+        model_id: "anthropic/claude-sonnet-4-20250514".to_string(),
+        tool_execution: ToolExecutionMode::Sequential,
+        compaction_strategy: CompactionStrategy::Disabled,
+        finish_turn: Some(Arc::new(move |_ctx| {
+            let counter = Arc::clone(&hook_counter);
+            Box::pin(async move {
+                let first = counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+                Ok(first.then_some(FinishTurnAction::Continue))
+            })
+        })),
+        ..Default::default()
+    };
+
+    let agent_loop = AgentLoop::new(
+        provider,
+        config,
+        Arc::new(ToolRegistry::new()),
+        SharedState::new(),
+    );
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let events_clone = events.clone();
+    agent_loop
+        .run("go".to_string(), move |e| {
+            events_clone.lock().unwrap().push(e)
+        })
+        .await
+        .unwrap();
+
+    let events = events.lock().unwrap();
+    let turn_ends = events
+        .iter()
+        .filter(|e| matches!(e, AgentEvent::TurnEnd { .. }))
+        .count();
+
+    assert_eq!(
+        *calls.lock().unwrap(),
+        2,
+        "Continue must force exactly one more provider request"
+    );
+    assert_eq!(turn_ends, 2);
+}

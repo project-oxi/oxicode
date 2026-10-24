@@ -140,6 +140,9 @@ pub struct Agent {
     auto_retry_cancel: Arc<AtomicBool>,
     /// Shared auto-retry notify for immediate retry-sleep wake-up.
     auto_retry_notify: Arc<tokio::sync::Notify>,
+    /// Notified whenever a run finishes (normal exit or panic) — drives
+    /// [`Agent::wait_for_idle`].
+    idle_notify: Arc<tokio::sync::Notify>,
     /// Pending model switch — stored when the agent is running,
     /// applied after the current loop completes.
     pending_model_switch: RwLock<Option<PendingModelSwitch>>,
@@ -282,6 +285,7 @@ impl Agent {
             auto_retry_enabled: Arc::new(AtomicBool::new(true)),
             auto_retry_cancel: Arc::new(AtomicBool::new(false)),
             auto_retry_notify: Arc::new(tokio::sync::Notify::new()),
+            idle_notify: Arc::new(tokio::sync::Notify::new()),
             pending_model_switch: RwLock::new(None),
         }
     }
@@ -618,13 +622,14 @@ impl Agent {
         }
 
         // Drop guard ensures is_running is cleared even on panic.
-        struct RunningGuard<'a>(&'a AtomicBool);
+        struct RunningGuard<'a>(&'a AtomicBool, &'a tokio::sync::Notify);
         impl Drop for RunningGuard<'_> {
             fn drop(&mut self) {
                 self.0.store(false, Ordering::SeqCst);
+                self.1.notify_waiters();
             }
         }
-        let _guard = RunningGuard(&self.is_running);
+        let _guard = RunningGuard(&self.is_running, &self.idle_notify);
         self.reset_cancel();
 
         self.run_with_channel_inner(prompt, tx).await
@@ -694,6 +699,8 @@ impl Agent {
             subagent_runner: self.config().config.subagent_runner.clone(),
             subagent_depth: self.config().config.subagent_depth,
             mode: self.config().config.mode,
+            steering_mode: self.config().config.steering_mode,
+            follow_up_mode: self.config().config.follow_up_mode,
             ..Default::default()
         };
 
@@ -939,6 +946,29 @@ impl Agent {
         self.cancel_flag.store(true, Ordering::SeqCst);
     }
 
+    /// Whether a run is currently in flight (upstream pi: the agent's
+    /// streaming state).
+    pub fn is_streaming(&self) -> bool {
+        self.is_running.load(Ordering::SeqCst)
+    }
+
+    /// Resolves once no run is in flight (upstream pi: `Agent.waitForIdle`).
+    ///
+    /// Returns immediately when the agent is idle. The wakeup is armed
+    /// before the flag is re-checked, so a run finishing concurrently
+    /// cannot be missed.
+    pub async fn wait_for_idle(&self) {
+        loop {
+            let notified = self.idle_notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if !self.is_running.load(Ordering::SeqCst) {
+                return;
+            }
+            notified.await;
+        }
+    }
+
     /// Toggle auto-retry at runtime (affects the next retry decision in an
     /// active run; does not interrupt an in-progress retry sleep — use
     /// [`Self::cancel_auto_retry`] for that).
@@ -1135,6 +1165,8 @@ impl Agent {
             lsp: inner.config.lsp.clone(),
             mode: inner.config.mode,
             snapshot_store: inner.config.snapshot_store.clone(),
+            steering_mode: inner.config.steering_mode,
+            follow_up_mode: inner.config.follow_up_mode,
             ..Default::default()
         };
 
@@ -1168,6 +1200,7 @@ impl Agent {
 
         // Clone the is_running Arc so the spawned task can clear it.
         let is_running_flag = Arc::clone(&self.is_running);
+        let idle_notify = Arc::clone(&self.idle_notify);
 
         // Snapshot the observability_dispatch list before the spawned
         // task. The future is `'static` and cannot borrow `&self`,
@@ -1182,13 +1215,14 @@ impl Agent {
             // Guard ensures is_running is cleared even if the task panics.
             // Without this, a panic mid-stream leaves is_running=true and
             // blocks all future runs (the compare_exchange at entry fails).
-            struct RunningGuard(Arc<AtomicBool>);
+            struct RunningGuard(Arc<AtomicBool>, Arc<tokio::sync::Notify>);
             impl Drop for RunningGuard {
                 fn drop(&mut self) {
                     self.0.store(false, Ordering::SeqCst);
+                    self.1.notify_waiters();
                 }
             }
-            let _guard = RunningGuard(is_running_flag);
+            let _guard = RunningGuard(is_running_flag, idle_notify);
 
             let result = agent_loop
                 .run(prompt, move |event: AgentEvent| {

@@ -181,6 +181,39 @@ pub struct AgentLoopConfig {
     /// (A2A, HTTP, etc.) and pass the impl here. See
     /// `docs/oxicode-sdk-ownership.md` §3.
     pub circuit_breaker: Option<oxicode_ai::circuit_breaker::SharedBreaker>,
+
+    /// Validate tool call arguments against the tool's JSON Schema
+    /// (`parameters_schema`) before the `before_tool_call` hook and execution
+    /// (mirrors upstream pi's `validateToolArguments`).
+    ///
+    /// On failure the call is rejected with an error tool result before the
+    /// tool's `execute` runs — the model sees the validation message and can
+    /// retry with corrected arguments. Tools whose schema declares no
+    /// constraints accept every argument object, so this is a no-op for them.
+    ///
+    /// Default: `true`. Set to `false` to pass raw arguments through
+    /// (legacy behavior).
+    pub validate_tool_arguments: bool,
+
+    /// Delivery mode for the steering queue (upstream pi: `steeringMode`).
+    ///
+    /// Default: [`QueueMode::All`] (oxicode's legacy drain-all behavior —
+    /// note upstream pi defaults to one-at-a-time instead).
+    pub steering_mode: QueueMode,
+
+    /// Delivery mode for the follow-up queue (upstream pi: `followUpMode`).
+    ///
+    /// Default: [`QueueMode::All`] (oxicode's legacy drain-all behavior).
+    pub follow_up_mode: QueueMode,
+
+    /// Optional hook invoked after a turn's assistant message and tool
+    /// results are finalized, before `turn_end` is emitted (upstream pi
+    /// 0.87.0 `finishTurn`, successor of `shouldStopAfterTurn`).
+    ///
+    /// The returned [`FinishTurnAction`] is applied only for turns that
+    /// ended normally — error/aborted turns stay hard exits regardless of
+    /// the decision, matching upstream semantics.
+    pub finish_turn: Option<FinishTurnHook>,
 }
 
 impl Default for AgentLoopConfig {
@@ -225,6 +258,10 @@ impl Default for AgentLoopConfig {
             harmony_leak_detection: false,
             dialect: None,
             circuit_breaker: None,
+            validate_tool_arguments: true,
+            steering_mode: QueueMode::default(),
+            follow_up_mode: QueueMode::default(),
+            finish_turn: None,
             tool_call_loop_guard:
                 oxicode_ai::utils::tool_call_loop::ToolCallLoopGuardOptions::default(),
         }
@@ -241,6 +278,58 @@ use serde_json::Value;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+
+/// Delivery mode for queued steering / follow-up messages (upstream pi:
+/// `steeringMode` / `followUpMode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueMode {
+    /// Deliver every queued message in a single batch.
+    ///
+    /// Oxicode's default (legacy drain-all behavior). Note upstream pi
+    /// defaults to [`QueueMode::OneAtATime`] instead.
+    #[default]
+    All,
+    /// Deliver one queued message per batch; the rest wait for the next
+    /// poll point.
+    OneAtATime,
+}
+
+/// What the loop should do after a turn is finalized (upstream pi 0.87.0
+/// `finishTurn` return value).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinishTurnAction {
+    /// End the run after `turn_end`, without polling the steering/follow-up
+    /// queues (end-of-run work belongs to `agent_end` consumers).
+    End,
+    /// Guarantee one more provider request, even when no tool calls or
+    /// queued messages would otherwise trigger it (a context-only request).
+    /// If tool results, steering, or a follow-up already cause that request,
+    /// the decision is satisfied without an extra request.
+    Continue,
+}
+
+/// Context handed to the [`AgentLoopConfig::finish_turn`] hook.
+#[derive(Debug, Clone)]
+pub struct FinishTurnContext {
+    /// The assistant message that concluded the turn.
+    pub assistant_message: oxicode_ai::Message,
+    /// Tool results finalized in this turn (assistant source order).
+    pub tool_results: Vec<oxicode_ai::ToolResultMessage>,
+}
+
+/// Hook invoked after a turn's assistant message and tool results are
+/// finalized, before `turn_end` is emitted.
+///
+/// Runs for every completed turn. Returning `None` preserves normal
+/// scheduling. An `Err` is logged and ignored (the turn proceeds normally).
+pub type FinishTurnHook = Arc<
+    dyn Fn(
+            FinishTurnContext,
+        ) -> Pin<Box<dyn Future<Output = Result<Option<FinishTurnAction>>> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Async hook invoked after context compaction completes.
 ///

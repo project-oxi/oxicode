@@ -313,6 +313,16 @@ pub struct AgentConfig {
     /// edit tool falls back to plain text replacement.
     #[serde(skip, default)]
     pub snapshot_store: Option<std::sync::Arc<dyn oxicode_hashline::SnapshotStore>>,
+    /// Delivery mode for steering messages queued mid-run (upstream pi
+    /// `steeringMode`). Threaded to `AgentLoopConfig::steering_mode`.
+    /// Default: [`QueueMode::All`].
+    #[serde(default)]
+    pub steering_mode: crate::agent_loop::config::QueueMode,
+    /// Delivery mode for follow-up messages queued mid-run (upstream pi
+    /// `followUpMode`). Threaded to `AgentLoopConfig::follow_up_mode`.
+    /// Default: [`QueueMode::All`].
+    #[serde(default)]
+    pub follow_up_mode: crate::agent_loop::config::QueueMode,
 }
 
 fn default_true_bool() -> bool {
@@ -333,6 +343,8 @@ impl Default for AgentConfig {
             todo_reminders_enabled: true,
             todo_reminders_max: crate::tools::todo::MAX_TODO_STOP_REMINDERS,
             todo_eager_mode: crate::agent_loop::todo_policy::TodoEagerMode::Off,
+            steering_mode: crate::agent_loop::config::QueueMode::default(),
+            follow_up_mode: crate::agent_loop::config::QueueMode::default(),
             description: None,
             model_id: "claude-sonnet-4-20250514".to_string(),
             system_prompt: None,
