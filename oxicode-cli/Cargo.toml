@@ -1,6 +1,6 @@
 [package]
 name = "oxicode-cli"
-version = "0.81.0"
+version = "0.82.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Terminal-based AI coding assistant — multi-provider, streaming-first, extensible"
@@ -21,15 +21,15 @@ name = "oxicode"
 path = "src/lib.rs"
 
 [dependencies]
-oxicode-ai = { version = "0.81.0", path = "../oxicode-ai" }
-oxicode-catalog = { version = "0.81.0", path = "../oxicode-catalog" }
-oxicode-agent = { version = "0.81.0", path = "../oxicode-agent" }
-oxicode-sdk = { version = "0.81.0", path = "../oxicode-sdk", features = ["router", "role-routing", "role-switching", "url-resolver", "behavior"] }
-oxicode-hashline = { version = "0.81.0", path = "../oxicode-hashline" }
-oxicode-vtui = { version = "0.81.0", path = "../oxicode-vtui" }
-oxicode-vtui-compat = { version = "0.81.0", path = "../oxicode-vtui-compat" }
-oxicode-textarea = { version = "0.81.0", path = "../oxicode-textarea" }
-oxicode-lsp = { version = "0.81.0", path = "../oxicode-lsp" }
+oxicode-ai = { version = "0.82.0", path = "../oxicode-ai" }
+oxicode-catalog = { version = "0.82.0", path = "../oxicode-catalog" }
+oxicode-agent = { version = "0.82.0", path = "../oxicode-agent" }
+oxicode-sdk = { version = "0.82.0", path = "../oxicode-sdk", features = ["router", "role-routing", "role-switching", "url-resolver", "behavior"] }
+oxicode-hashline = { version = "0.82.0", path = "../oxicode-hashline" }
+oxicode-vtui = { version = "0.82.0", path = "../oxicode-vtui" }
+oxicode-vtui-compat = { version = "0.82.0", path = "../oxicode-vtui-compat" }
+oxicode-textarea = { version = "0.82.0", path = "../oxicode-textarea" }
+oxicode-lsp = { version = "0.82.0", path = "../oxicode-lsp" }
 lsp-types = "0.95"
 
 # Async

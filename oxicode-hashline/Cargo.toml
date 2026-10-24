@@ -1,6 +1,6 @@
 [package]
 name = "oxicode-hashline"
-version = "0.81.0"
+version = "0.82.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Line-anchored patch format for AI-assisted code editing"

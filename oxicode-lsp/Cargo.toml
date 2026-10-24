@@ -1,6 +1,6 @@
 [package]
 name = "oxicode-lsp"
-version = "0.81.0"
+version = "0.82.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Thin LSP protocol adapter — JSON-RPC framing, lsp-types wrapper, async-process + async-lsp. Multi-server lifecycle lives in oxicode-cli."

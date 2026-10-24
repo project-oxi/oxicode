@@ -1,6 +1,6 @@
 [package]
 name = "oxicode-agent"
-version = "0.81.0"
+version = "0.82.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Agent runtime with tool-calling loop for AI coding assistants"
@@ -13,9 +13,9 @@ categories = ["development-tools", "asynchronous"]
 exclude = ["target/", "benches/"]
 
 [dependencies]
-oxicode-ai = { version = "0.81.0", path = "../oxicode-ai" }
-oxicode-hashline = { version = "0.81.0", path = "../oxicode-hashline" }
-oxicode-api-stability = { version = "0.81.0", path = "../oxicode-api-stability" }
+oxicode-ai = { version = "0.82.0", path = "../oxicode-ai" }
+oxicode-hashline = { version = "0.82.0", path = "../oxicode-hashline" }
+oxicode-api-stability = { version = "0.82.0", path = "../oxicode-api-stability" }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }

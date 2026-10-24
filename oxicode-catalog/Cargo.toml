@@ -1,6 +1,6 @@
 [package]
 name = "oxicode-catalog"
-version = "0.81.0"
+version = "0.82.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Model catalog — single source of truth for model data, identity, and provider descriptors (models.dev-sourced)"

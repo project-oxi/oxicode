@@ -1,6 +1,6 @@
 [package]
 name = "oxicode-ai"
-version = "0.81.0"
+version = "0.82.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Unified LLM API — multi-provider streaming interface for AI coding assistants"
@@ -14,12 +14,12 @@ exclude = ["target/"]
 
 [dependencies]
 # Stability tier attribute macros
-oxicode-api-stability = { version = "0.81.0", path = "../oxicode-api-stability" }
+oxicode-api-stability = { version = "0.82.0", path = "../oxicode-api-stability" }
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 # Catalog (extracted leaf crate — model data, identity, descriptors)
-oxicode-catalog = { version = "0.81.0", path = "../oxicode-catalog" }
+oxicode-catalog = { version = "0.82.0", path = "../oxicode-catalog" }
 
 # HTTP client
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "blocking", "rustls-tls"] }

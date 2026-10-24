@@ -1,6 +1,6 @@
 [package]
 name = "oxicode-vtui"
-version = "0.81.0"
+version = "0.82.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Terminal UI framework for oxicode, based on vtcode-ui"
@@ -45,5 +45,5 @@ human-panic         = "2.0"
 ratatui-cheese      = "0.7"
 tracing-subscriber  = { version = "0.3", features = ["env-filter", "fmt"] }
 tui-shimmer         = "0.1"
-oxicode-vtui-compat      = { version = "0.81.0", path = "../oxicode-vtui-compat" }
+oxicode-vtui-compat      = { version = "0.82.0", path = "../oxicode-vtui-compat" }
 

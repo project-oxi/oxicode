@@ -8,7 +8,7 @@ exclude = ["scripts"]
 # `rust-version` in sync — `rust-version` is the source of truth for the
 # Cargo 2024-edition resolver, the MSRV job in CI, and `cargo install`.
 [workspace.package]
-version = "0.81.0"
+version = "0.82.0"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"

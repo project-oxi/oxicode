@@ -1,6 +1,6 @@
 [package]
 name = "oxicode-vtui-compat"
-version = "0.81.0"
+version = "0.82.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Compatibility stubs for vendored vtcode-ui"
