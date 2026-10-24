@@ -506,9 +506,15 @@ impl std::fmt::Debug for FileModelCatalog {
 }
 
 impl FileModelCatalog {
-    /// Build the catalog by loading SNAP + cache + overrides. If the cache
-    /// is stale and `fetch_enabled`, attempt one refresh (failure is
-    /// silent — SNAP serves as fallback).
+    /// Build the catalog by loading SNAP + cache + overrides.
+    ///
+    /// Cache precedence: fresh cache, then a stale cache (serve-stale — a
+    /// stale runtime cache still beats the embedded snapshot), then SNAP.
+    /// If the cache is stale and `fetch_enabled`, one refresh is attempted
+    /// synchronously (failure logs a warning and keeps the current
+    /// snapshot), and a background task keeps re-refreshing every
+    /// mtime window so long-running sessions pick up models.dev changes
+    /// without a restart.
     pub async fn init(config: CatalogConfig) -> std::io::Result<Arc<Self>> {
         let (tx, _) = broadcast::channel(BROADCAST_CAPACITY);
         let cat = Arc::new(Self {
@@ -520,9 +526,9 @@ impl FileModelCatalog {
         // 1. SNAP (embedded at compile time)
         cat.load_snapshot_internal();
 
-        // 2. Runtime cache (mtime fresh = keep, stale = discard)
+        // 2. Runtime cache (fresh first; stale cache served as fallback)
         if cat.try_load_fresh_cache().await.is_none() {
-            tracing::debug!("catalog: cache stale or missing");
+            cat.try_load_stale_cache().await;
         }
 
         // 3. User overrides (Layer 2 — highest precedence)
@@ -531,10 +537,10 @@ impl FileModelCatalog {
         // 4. LOCAL discovery (optional)
         cat.discover_local_all().await;
 
-        // 5. One refresh attempt if cache is stale (failure silent)
-        if cat.config.fetch_enabled && !cat.is_cache_fresh_internal() {
-            let _ = cat.refresh().await;
-        }
+        // 5. Refresh if stale (failure keeps the current snapshot), then
+        // keep refreshing in the background for the life of the process.
+        cat.refresh_if_stale_internal().await;
+        cat.spawn_refresh_task();
 
         Ok(cat)
     }
@@ -575,25 +581,80 @@ impl FileModelCatalog {
             .await
             .ok()
             .flatten();
-        match res {
-            Some(catalog) => {
-                let overrides = OverrideFile::default();
-                let (providers, models) = materialize(&catalog, &overrides);
-                let mut snap = self.state.write();
-                snap.providers = providers;
-                snap.models = models
-                    .into_iter()
-                    .map(|(pid, list)| {
-                        (
-                            pid,
-                            list.into_iter().map(|e| (e.model_id.clone(), e)).collect(),
-                        )
-                    })
-                    .collect();
-                Some(())
-            }
-            None => None,
+        res.map(|catalog| self.install_cache_catalog(catalog))
+    }
+
+    /// Serve-stale fallback: load the runtime cache regardless of age. A
+    /// stale cache is still newer than the build-time snapshot, so it is
+    /// the better approximation of models.dev while offline.
+    async fn try_load_stale_cache(&self) -> Option<()> {
+        let path = self.config.cache_path.clone();
+        let res = tokio::task::spawn_blocking(move || read_cache_stale_ok(&path))
+            .await
+            .ok()
+            .flatten();
+        res.map(|catalog| {
+            tracing::info!("catalog: serving stale runtime cache (background refresh will retry)");
+            self.install_cache_catalog(catalog)
+        })
+    }
+
+    /// Replace the in-memory snapshot with a materialized cache catalog.
+    fn install_cache_catalog(&self, catalog: MdCatalog) {
+        let overrides = OverrideFile::default();
+        let (providers, models) = materialize(&catalog, &overrides);
+        let mut snap = self.state.write();
+        snap.providers = providers;
+        snap.models = models
+            .into_iter()
+            .map(|(pid, list)| {
+                let map = list.into_iter().map(|e| (e.model_id.clone(), e)).collect();
+                (pid, map)
+            })
+            .collect();
+    }
+
+    /// Refresh once if fetches are enabled and the runtime cache aged out
+    /// of the mtime window. Failure logs a warning and keeps the current
+    /// snapshot (serve-stale). Returns whether a refresh succeeded.
+    async fn refresh_if_stale_internal(&self) -> bool {
+        if !self.config.fetch_enabled {
+            return false;
         }
+        if self.is_cache_fresh_internal() {
+            return false;
+        }
+        match self.refresh().await {
+            Ok(_) => true,
+            Err(error) => {
+                tracing::warn!(error = %error, "catalog refresh failed; keeping current snapshot");
+                false
+            }
+        }
+    }
+
+    /// Periodic catalog refresh: wakes every mtime window (doubled, so the
+    /// cache has actually aged out by wake time) and re-fetches models.dev
+    /// when stale. Success broadcasts `CatalogEvent::Updated` so subscribers
+    /// (model pickers) can invalidate. Exits immediately when fetches are
+    /// disabled.
+    fn spawn_refresh_task(self: &Arc<Self>) {
+        if !self.config.fetch_enabled {
+            return;
+        }
+        // Weak: the task must not pin the catalog in memory. When the last
+        // owner (builder/consumer) drops it, the task exits on its next wake.
+        let cat = Arc::downgrade(self);
+        let window = self.config.mtime_window;
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(window * 2).await;
+                let Some(cat) = cat.upgrade() else {
+                    break;
+                };
+                cat.refresh_if_stale_internal().await;
+            }
+        });
     }
 
     fn is_cache_fresh_internal(&self) -> bool {
@@ -737,6 +798,22 @@ fn read_cache_if_fresh(path: &Path, window: Duration) -> Option<MdCatalog> {
     if age > window {
         return None;
     }
+    let body = std::fs::read_to_string(path).ok()?;
+    match serde_json::from_str::<MdCatalog>(&body) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            tracing::warn!(error = %e, "cache corrupt, ignoring");
+            let _ = std::fs::remove_file(path);
+            None
+        }
+    }
+}
+
+/// Read the cache regardless of age — serve-stale fallback. A stale cache
+/// is still strictly fresher than the build-time embedded snapshot, so it
+/// beats SNAP whenever the fresh read misses. Corrupt files are removed
+/// like the fresh path.
+fn read_cache_stale_ok(path: &Path) -> Option<MdCatalog> {
     let body = std::fs::read_to_string(path).ok()?;
     match serde_json::from_str::<MdCatalog>(&body) {
         Ok(c) => Some(c),
@@ -1101,6 +1178,21 @@ fn is_cache_fresh_static(path: &Path, window: Duration) -> bool {
 mod tests {
     use super::*;
     use crate::AuthMethod;
+
+    #[test]
+    fn read_cache_stale_ok_reads_regardless_of_age() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("cache.json");
+        std::fs::write(
+            &path,
+            r#"{"p":{"name":"P","env":[],"models":{"m":{"name":"M","reasoning":false,"limit":{"context":1000,"output":100}}}}}"#,
+        )
+        .unwrap();
+        assert!(read_cache_stale_ok(&path).is_some());
+        std::fs::write(&path, "not json").unwrap();
+        assert!(read_cache_stale_ok(&path).is_none());
+        assert!(!path.exists(), "corrupt cache must be removed");
+    }
 
     #[test]
     fn protocol_for_anthropic() {

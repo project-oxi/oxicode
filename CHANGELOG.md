@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (upstream `validateToolArguments`). Failures return an error tool result
     the model can retry against. Disable with
     `AgentLoopConfig::validate_tool_arguments = false`.
+- Catalog freshness (serve-stale + background refresh):
+  - Boot no longer discards an aged-out `models-dev.json` cache — a stale
+    cache is served instead (it is still newer than the build-time snapshot)
+    while refresh retries.
+  - `FileModelCatalog` spawns a periodic refresh task (every mtime window;
+    weak reference, exits when the catalog is dropped) so long-running
+    sessions pick up models.dev changes without a restart. Refresh failures
+    now log a warning instead of failing silently. Fetch-disabled builds
+    (`OXICODE_MODELS_DEV_DISABLE_FETCH`) never spawn the task.
 - `grep.search.v2` — `grep` now runs on a streaming, ignore-aware,
   cancellable ExactSearchEngine (replaces `grep.search.v1`;
   gitignore/.ignore/global/exclude respected, built-in artifact exclusions

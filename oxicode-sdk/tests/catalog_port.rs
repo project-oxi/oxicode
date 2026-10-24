@@ -72,6 +72,67 @@ async fn file_catalog_init_loads_snap() {
 }
 
 #[tokio::test]
+async fn stale_cache_is_served_when_fresh_window_expires() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let cache = tmp.path().join("models-dev.json");
+    std::fs::write(
+        &cache,
+        r#"{"staleprov":{"name":"Stale Provider","env":["X"],"models":{"stale-model":{"name":"Stale Model","reasoning":false,"limit":{"context":200000,"output":64000}}}}}"#,
+    )
+    .unwrap();
+    let config = oxicode_sdk::CatalogConfig {
+        cache_path: cache,
+        etag_path: tmp.path().join("cache.etag"),
+        override_path: tmp.path().join("overrides.toml"),
+        // Cache instantly ages out of the window — the stale path must
+        // still serve it (it beats the older embedded snapshot).
+        mtime_window: std::time::Duration::from_millis(1),
+        fetch_enabled: false,
+        ..Default::default()
+    };
+    // Let the file age past the window.
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let cat = FileModelCatalog::init(config).await.unwrap();
+    let providers = cat.list_providers().await.unwrap();
+    assert!(
+        providers.iter().any(|p| p == "staleprov"),
+        "stale cache must be served instead of falling back to SNAP; got {providers:?}"
+    );
+}
+
+#[tokio::test]
+async fn background_refresh_keeps_serving_stale_when_offline() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let cache = tmp.path().join("models-dev.json");
+    std::fs::write(
+        &cache,
+        r#"{"staleprov":{"name":"Stale Provider","env":["X"],"models":{"stale-model":{"name":"Stale Model","reasoning":false,"limit":{"context":200000,"output":64000}}}}}"#,
+    )
+    .unwrap();
+    let config = oxicode_sdk::CatalogConfig {
+        cache_path: cache,
+        etag_path: tmp.path().join("cache.etag"),
+        override_path: tmp.path().join("overrides.toml"),
+        mtime_window: std::time::Duration::from_millis(10),
+        // Port 9 (discard) — connection refused, guaranteed dead, no
+        // real network access.
+        models_dev_url: "http://127.0.0.1:9".to_string(),
+        ..Default::default()
+    };
+    // Age the cache past the window.
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    let cat = FileModelCatalog::init(config).await.unwrap();
+    // The synchronous refresh and several background-refresh attempts all
+    // fail against the dead endpoint; the stale snapshot must survive.
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    let providers = cat.list_providers().await.unwrap();
+    assert!(
+        providers.iter().any(|p| p == "staleprov"),
+        "failed refreshes must not wipe the served snapshot; got {providers:?}"
+    );
+}
+
+#[tokio::test]
 async fn file_catalog_get_model_anthropic() {
     let tmp = tempfile::TempDir::new().unwrap();
     let config = oxicode_sdk::CatalogConfig {

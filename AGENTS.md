@@ -127,7 +127,10 @@ across 70+ providers, with models.dev as the source of truth (see
 - **SNAP (Layer 1)** — embedded models.dev snapshot `_snapshot.json.gz`
   (`include_bytes!`-ed; works fully offline on first run).
 - **LIVE (Layer 2.5)** — runtime cache `<home>/cache/models-dev.json` (canonical oxicode home; ETag-aware
-  conditional GET, ~1h mtime window). `catalog/models_dev.rs`.
+  conditional GET, ~1h mtime window). Boot serves a stale cache rather than
+  falling straight to SNAP, and a background task (weak ref, exits when the
+  catalog is dropped) re-refreshes every mtime window so long-running
+  sessions track models.dev without a restart.
 - **Layer 2** — user overrides (`<home>/catalog/overrides.toml`.
 - **LOCAL (Layer 3)** — runtime `/v1/models` discovery for local servers
   (ollama/lmstudio/vllm/sglang).
