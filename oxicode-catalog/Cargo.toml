@@ -15,7 +15,7 @@ exclude = ["target/"]
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.9"
+toml = "1.1"
 
 # Snapshot decompression (embedded models.dev _snapshot.json.gz)
 flate2 = "1"
@@ -24,7 +24,7 @@ flate2 = "1"
 # Async runtime (catalog enrichment retry backoff)
 tokio = { version = "1", features = ["rt", "time", "macros"] }
 # Home-directory resolution for product_env (OXICODE_HOME / ~/.oxicode)
-dirs = "6"
+dirs = "7"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 futures = "0.3"
 
